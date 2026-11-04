@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ethiopia Woredas: Heat, Flooding, and Food Prices (June 2023 →)</title>
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.7.0/mapbox-gl.css" rel="stylesheet">
+  <link href="style.css?v=10" rel="stylesheet">
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Ethiopia Woredas: Heat, Flooding, and Food Prices (June 2023 →)</h1>
+      <p class="sub" id="coverage"></p>
+    </div>
+    <button id="themeBtn" class="ghost" type="button" aria-label="Toggle light/dark">◐</button>
+  </header>
+
+  <main>
+    <aside id="panel">
+      <section>
+        <span class="lbl">Map</span>
+        <div class="seg" role="group" aria-label="Map mode">
+          <button type="button" data-mode="single" aria-pressed="true">Single layer</button>
+          <button type="button" data-mode="bi" aria-pressed="false">Heat × population</button>
+        </div>
+      </section>
+
+      <section id="singleCtl">
+        <label for="metric" class="lbl">Map layer</label>
+        <select id="metric"></select>
+        <p id="metricDesc" class="desc"></p>
+        <div id="legend"></div>
+        <label class="scheme"><span>Colours</span>
+          <select id="scheme">
+            <option value="viridis">Viridis</option>
+            <option value="classic">Classic (by theme)</option>
+          </select>
+        </label>
+      </section>
+
+      <section id="biCtl" hidden>
+        <label for="biY" class="lbl">Heat</label>
+        <select id="biY" data-axis="y"></select>
+        <label for="biX" class="lbl lblGap">Population or age</label>
+        <select id="biX" data-axis="x"></select>
+        <p class="desc">Each woreda is ranked into thirds on both. Dark woredas are among the hottest and the most populated.</p>
+        <div id="bivLegend"></div>
+        <div id="hotspots"></div>
+      </section>
+
+      <section id="timeCtl">
+        <div class="row">
+          <span class="lbl">Month</span>
+          <span id="monthLabel" class="month"></span>
+          <span id="ensoBadge" class="badge" hidden>El Niño</span>
+        </div>
+        <div class="row">
+          <button id="playBtn" type="button" aria-label="Play">▶</button>
+          <input id="slider" type="range" min="0" step="1" aria-label="Month">
+        </div>
+      </section>
+      <section id="dayCtl" hidden>
+        <div class="row">
+          <span class="lbl">Day</span>
+          <span id="dayLabel" class="month"></span>
+          <span id="fcBadge" class="badge fc" hidden>Forecast</span>
+        </div>
+        <div class="row">
+          <input id="daySlider" type="range" min="0" step="1" aria-label="Day">
+        </div>
+      </section>
+      <p id="staticNote" class="desc" hidden></p>
+
+      <section id="gaugeCtl">
+        <span class="lbl">River flood gauges</span>
+        <label class="check"><input type="checkbox" id="showGauges" checked> Show the 14 GloFAS gauges</label>
+        <label class="check" id="riverRow"><input type="checkbox" id="showRivers" checked> Show the rivers linking them</label>
+        <div id="gaugeLegend"></div>
+        <p class="desc">Discharge relative to the 2-year flood (RP2) at each gauge. Click a gauge for its series below; its catchment (light orange) and downstream path (orange-red) light up. Arrows show flow direction; white dots mark where gauged rivers meet.</p>
+      </section>
+
+      <section id="marketCtl">
+        <span class="lbl">Food markets</span>
+        <label class="check"><input type="checkbox" id="showMarkets" checked> Show the 129 World Bank markets</label>
+        <div id="marketLegend"></div>
+        <p class="desc">Diamonds: each market's price for the month, against Ethiopia's national average. Click one to compare it with local heat and river flow below.</p>
+      </section>
+
+      <section>
+        <label for="find" class="lbl">Selection</label>
+        <input id="find" list="woredaList" placeholder="Find a woreda…" autocomplete="off">
+        <datalist id="woredaList"></datalist>
+        <label class="check"><input type="checkbox" id="addMode"> Add to selection</label>
+      </section>
+
+      <section id="detail"></section>
+    </aside>
+
+    <div id="mapWrap">
+      <div id="map"></div>
+      <div id="tip" hidden></div>
+    </div>
+  </main>
+
+  <div id="bottom">
+    <section id="chartWrap">
+      <div class="chartHead">
+        <h2 id="chartTitle"></h2>
+        <div class="legendRow" id="chartLegend"></div>
+      </div>
+      <div id="chart"></div>
+      <div id="chartTip" class="ftip" hidden></div>
+    </section>
+
+    <section id="scatterWrap">
+      <div class="chartHead">
+        <h2 id="scatterTitle"></h2>
+        <span id="rho" class="rho"></span>
+      </div>
+      <div class="scatterCtl">
+        <label><span>x</span><select id="sX" data-axis="x"></select></label>
+        <label><span>y</span><select id="sY" data-axis="y"></select></label>
+        <label class="check"><input type="checkbox" id="sLog" checked> Log x</label>
+      </div>
+      <div id="scatter"></div>
+      <div id="scatterTip" class="ftip" hidden></div>
+      <p class="desc">Each dot is a woreda in the selected month. Click to select one, Shift-click to add, drag to select a group.</p>
+    </section>
+  </div>
+
+  <section id="floodWrap">
+    <div class="chartHead">
+      <div>
+        <h2 id="floodTitle"></h2>
+        <div class="desc" id="floodWhere"></div>
+        <div class="desc" id="floodLinks"></div>
+      </div>
+      <div class="floodCtl">
+        <select id="gaugeSel" aria-label="Gauge"></select>
+        <select id="gaugeCmp" aria-label="Compare with a connected gauge"></select>
+        <div class="seg" id="floodRange" role="group" aria-label="Time range">
+          <button type="button" data-range="all" aria-pressed="true">Since Jun 2023</button>
+          <button type="button" data-range="recent" aria-pressed="false">Last 6 months</button>
+          <button type="button" data-range="fc" aria-pressed="false">Forecast</button>
+        </div>
+        <label class="check"><input type="checkbox" id="showNormal" checked> Normal range</label>
+        <button type="button" id="zoomGauge">Zoom to gauge</button>
+        <button type="button" id="selZone"></button>
+      </div>
+    </div>
+    <div class="legendRow fleg">
+      <span><i style="background:var(--accent)"></i>Discharge (GloFAS reanalysis)</span>
+      <span><i style="background:var(--accent);height:0;border-top:2px dashed var(--accent)"></i>Forecast median, middle half and full ensemble range</span>
+      <span><i class="box" style="background:var(--normal);border-color:var(--muted)"></i>Normal 10–90% (1991–2020)</span>
+      <span id="cmpKey" hidden><i style="background:var(--cmp)"></i><span></span></span>
+      <span><i style="background:var(--trigger)"></i>OCHA OND trigger</span>
+      <span><i class="box"></i>El Niño</span>
+    </div>
+    <div id="fchart"></div>
+    <div id="fchartTip" class="ftip" hidden></div>
+    <div id="floodStats"></div>
+    <h2 class="stripTitle">All gauges · monthly peak relative to RP2</h2>
+    <p class="desc">Click a cell to show that gauge and month. Colours match the gauge legend in the side panel.</p>
+    <div id="fstrip"></div>
+    <div id="fstripTip" class="ftip" hidden></div>
+    <p class="desc" id="floodSrc"></p>
+  </section>
+
+  <section id="foodWrap">
+    <div class="chartHead">
+      <div>
+        <h2 id="foodTitle"></h2>
+        <div class="desc" id="foodWhere"></div>
+      </div>
+      <div class="floodCtl">
+        <select id="marketSel" aria-label="Market"></select>
+        <button type="button" id="fpWoreda">Select its woreda</button>
+        <button type="button" id="fpGauge">Show its gauge</button>
+      </div>
+    </div>
+    <div class="scatterCtl fpCtl">
+      <label><span>Commodity</span><select id="fpCom"></select></label>
+      <label><span>Price measure</span><select id="fpMeas"></select></label>
+      <label><span>Heat</span><select id="fpHeat"></select></label>
+      <label><span>Flooding</span><select id="fpFlood"></select></label>
+      <label class="check"><input type="checkbox" id="fpObs"> Survey months only (lag test)</label>
+    </div>
+    <div class="legendRow fleg">
+      <span><i style="background:var(--accent)"></i>Market (dot = month with a survey price)</span>
+      <span><i style="background:var(--national)"></i>National average</span>
+      <span><i class="box" style="background:var(--warm);border-color:var(--warm)"></i>Hotter than normal</span>
+      <span><i class="box" style="background:var(--cool);border-color:var(--cool)"></i>Cooler</span>
+      <span><i class="box" style="background:var(--wet);border-color:var(--wet)"></i>River flow above normal</span>
+      <span><i class="box" style="background:var(--dry);border-color:var(--dry)"></i>Below normal</span>
+      <span><i class="box"></i>El Niño</span>
+    </div>
+    <div id="fpchart"></div>
+    <div id="fpTip" class="ftip" hidden></div>
+    <div class="lags">
+      <div id="lagHeat"></div>
+      <div id="lagFlood"></div>
+    </div>
+    <div class="legendRow fleg"><span><i class="box bAllKey"></i>All markets (pooled, each market's own mean removed)</span><span><i class="box bOneKey"></i>Selected market</span><span class="m">Faded bars: within chance (|ρ| &lt; 1.96/√n)</span></div>
+    <p class="desc" id="lagNote"></p>
+    <p class="desc" id="foodSrc"></p>
+  </section>
+
+  <footer>
+    <h2>Sources</h2>
+    <dl class="sources">
+      <dt>Heat</dt>
+      <dd>CrisisReady HeatReady API: ERA5-Land reanalysis (Copernicus C3S) from June 2023, Open-Meteo for the latest days and the 6-day forecast. Daily max/min temperature, WBGT, UTCI and heat index per woreda; anomalies against the API's 2016–2025 climatology.</dd>
+      <dt>Flooding</dt>
+      <dd>River discharge from GloFAS v4 (Copernicus Emergency Management Service) via the Open-Meteo Flood API, 1984 to a 30-day ensemble forecast, at the 14 gauges and OND trigger levels of OCHA's Ethiopia flood anticipatory-action project (Centre for Humanitarian Data, ds-aa-eth-flooding). RP2/RP5 levels are fitted here to 1984–2025 annual peaks. River network: HydroRIVERS v1.0 (HydroSHEDS; Lehner &amp; Grill 2013, CC-BY 4.0).</dd>
+      <dt>Food prices</dt>
+      <dd>World Bank Real-Time Food Prices (RTFP), market level, release 2026-10-05 (microdata catalog 4483): 129 markets, monthly; months without a survey are World Bank estimates.</dd>
+      <dt>Population &amp; age</dt>
+      <dd>LandScan Global 2024 (population); WorldPop R2025A age structure (CC-BY 4.0).</dd>
+      <dt>Climate context</dt>
+      <dd>El Niño months from the NOAA CPC Oceanic Niño Index (ONI ≥ +0.5 °C for 5 overlapping seasons).</dd>
+      <dt>Boundaries &amp; basemap</dt>
+      <dd>OCHA COD-AB admin 3 (woredas); Mapbox, © OpenStreetMap contributors.</dd>
+    </dl>
+    <p class="note">Associations shown between prices, heat and river flow are exploratory correlations, not causal estimates. See the README for methods and caveats.</p>
+  </footer>
+
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.7.0/mapbox-gl.js"></script>
+  <script src="config.js"></script>
+  <script src="data/geo.js?v=3"></script>
+  <script src="data/rivers.js?v=202611041614"></script>
+  <script src="data/food.js?v=202611041601"></script>
+  <script src="data/flood.js?v=202611041601"></script>
+  <script src="data/data.js?v=202611041557"></script>
+  <script src="app.js?v=16"></script>
+</body>
+</html>

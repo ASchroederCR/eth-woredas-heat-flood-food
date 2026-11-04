@@ -1,0 +1,10 @@
+# raw downloads, caches and logs (2.6 GB; regenerate with the pipeline in README.md)
+build/
+__pycache__/
+*.pyc
+*.tmp
+*.zip
+# credentials live outside this folder (../heat_api_key.txt, ../Mapbox_Public_Token.txt); never add them here
+*key*.txt
+*token*.txt
+.env
