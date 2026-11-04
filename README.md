@@ -94,7 +94,7 @@ then step 6 is enough (about 2 minutes).
 ### Automatic daily refresh
 
 `refresh_daily.ps1` runs `download final`, `forecast`, steps 6 and 7, and `food_prices.py build` (no
-download) in turn (about 7 minutes) and logs
+download) in turn, then publishes `app/` to GitHub Pages (about 7 minutes in all), and logs
 to `build/logs/refresh.log`. The build also stamps the `data.js?v=` URL in `index.html`, so a plain
 reload of the map shows the new data. It is registered as the Windows scheduled task
 **Ethiopia woreda heat refresh**: daily at 07:30 local time (after the API's ~06:00 UTC forecast
@@ -110,14 +110,18 @@ Unregister-ScheduledTask -TaskName 'Ethiopia woreda heat refresh'   # remove it
 
 ### Publishing
 
-The public site is the `app/` folder, served by GitHub Pages from the `gh-pages` branch. After a
-rebuild, commit on `main` and republish:
+The public site is the `app/` folder, served by GitHub Pages from the `gh-pages` branch.
+`publish_pages.ps1` pushes the current `app/` there as a single commit with no history (force push),
+so daily data doesn't accumulate in the repository; it skips the push if `app/` hasn't changed. The
+daily refresh runs it after a successful build (a failed build step leaves the live site as it was).
+To publish by hand:
 
-```bash
-git add -A && git commit -m "Refresh data"
-git push origin main
-git push origin `git subtree split --prefix app main`:gh-pages --force
+```powershell
+powershell -File publish_pages.ps1
 ```
+
+`main` holds the code and a snapshot of `app/` from the last commit; the live data is on `gh-pages`.
+Commit code changes to `main` as usual.
 
 `app/config.js` carries the Mapbox *public* token; restrict it to the Pages URL in the Mapbox
 account (Tokens → URL restrictions). The HeatReady credentials stay in `../heat_api_key.txt`, outside
