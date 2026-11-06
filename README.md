@@ -53,13 +53,15 @@ Then browse to http://localhost:8766. `app/config.js` holds the Mapbox public to
     downstream gauges with distances along the channel, and *Compare with a connected gauge* overlays
     that gauge's discharge and reports how closely the two move together day to day.
 - **Rainfall (CHIRPS v3):** the *Rainfall* layers show rainfall per dekad (10-day period: days 1–10,
-  11–20 and 21–end of each month) from June 2023, with a dekad slider and play button, and as % of the
-  1991–2020 average for the same dekad (brown drier, green wetter, 80–120% near normal). *Monthly
-  rainfall* and *Monthly rainfall vs normal* sum the three dekads and move with the month slider. The
+  11–20 and 21–end of each month) from June 2023, with a dekad slider and play button, compared with
+  1991–2020 in two ways: *vs normal* is the percentile of this dekad among the same dekad in each of
+  those 30 years (classes: driest 10%, below normal, near normal, above normal, wettest 10%), and *vs
+  average* is the % of their average. The monthly versions sum the three dekads and move with the month
+  slider. Preliminary dekads are badged on the slider, dashed in the chart and lighter in the gauge panel. The
   chart below the map follows the chosen layer by dekad or month, for the selection and Ethiopia.
   For gauges, the discharge chart has a second panel underneath: rainfall per dekad over the gauge's
   upstream catchment (bars) against its normal (dashed), on the same time axis, and the tooltip and
-  headline cards give the catchment's rainfall and % of normal. The selected gauge's catchment is
+  headline cards give the catchment's rainfall, its percentile and % of average. The selected gauge's catchment is
   outlined (dashed) on the map.
 - **Food markets:** the 129 Ethiopian markets in the World Bank Real-Time Food Prices dataset, as
   diamonds coloured by the chosen price measure for the month. Click one, or pick it below the map, for
@@ -184,15 +186,23 @@ The national line in the chart is population-weighted (LandScan). Exposure is su
 - **Source:** CHIRPS v3.0 (Climate Hazards Center, UC Santa Barbara), dekadal Africa GeoTIFFs,
   0.05° (~5.5 km): satellite infrared cold-cloud duration calibrated to and blended with station data
   (v3 adds many stations and corrects gauge undercatch, so it is wetter than v2). The final product
-  appears about 4–6 weeks after a month ends; the preliminary product was not used, because the CHC
-  had no preliminary dekads newer than the final ones when this was built.
+  appears about 4–6 weeks after a month ends; dekads after that come from the CHC's preliminary global
+  dekads (available a few days after each dekad; the Africa preliminary dekads stopped updating in 2025),
+  clipped the same way and replaced by the final product when it appears.
 - **Woreda and catchment means:** each polygon is rasterised at 1/5 of a CHIRPS pixel so pixels
   count by the share of them inside the polygon (and by cos latitude); a woreda smaller than one
   sub-pixel takes the pixel at its centre.
 - **Catchments:** the HydroBASINS level-12 unit containing each gauge's HydroRIVERS reach plus every
   unit draining into it. Areas agree with the HydroRIVERS upstream area within 1–6 %.
-- **Normal:** the 1991–2020 mean for the same dekad of the year. *% of normal* is left blank where the
-  normal is under 2 mm a dekad (5 mm a month), since percentages of almost nothing are noise.
+- **Normal:** each woreda's (and catchment's) own rainfall for the same dekad in each year 1991–2020.
+  *Vs normal* is the percentile of the current value among those 30 (ties count half), so 50 is a
+  typical year and each class covers a fixed share of years. *Vs average* is the % of their mean.
+  Dekadal rainfall is strongly skewed: a few very wet years lift the mean, so a typical dekad is well
+  under 100% of average (the median woreda-dekad since June 2023 is 77%). Use the percentile for
+  "wetter or drier than usual" and the % for "how much rain relative to the average". Both are left
+  blank where the average is under 2 mm a dekad (5 mm a month), since ratios of almost nothing are noise.
+- **Checks:** woreda totals agree with an independent masked-raster mean within a few mm; the yearly
+  NetCDF baseline is identical, pixel for pixel, to the dekad GeoTIFFs (tested on all of 1991).
 - **Monthly layers** are only filled once all three dekads of a month are available.
 - **Citation:** Funk, C. et al. (2015), *Scientific Data* 2: 150066, and the CHIRPS v3.0
   documentation (data.chc.ucsb.edu/products/CHIRPS/v3.0).

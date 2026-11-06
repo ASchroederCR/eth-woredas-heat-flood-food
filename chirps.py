@@ -29,7 +29,7 @@ CLIP = OUT / "clip"
 APP = ROOT / "app"
 BASE = "https://data.chc.ucsb.edu/products/CHIRPS/v3.0/"
 FINAL = BASE + "dekads/africa/tifs/"
-PRELIM = BASE + "prelim/dekads/africa/tifs/"
+PRELIM = BASE + "prelim/dekads/global/tifs/"   # ~20 MB each; the Africa prelim dekads stopped in 2025
 UA = {"User-Agent": "eth-woreda-heat-map/1.0"}
 # study box (same as rivers.py): Ethiopia plus downstream reaches; whole pixels of the 0.05° grid
 BOX = (31.0, -1.5, 48.5, 15.5)
@@ -76,6 +76,9 @@ def dekads(y0, m0, y1, m1):
         y, m = (y + 1, 1) if m == 12 else (y, m + 1)
 
 
+REF_SHAPE = (340, 350)   # rows, cols of the study box on the 0.05 degree grid
+
+
 def clip_tif(data):
     import rasterio
     from rasterio.io import MemoryFile
@@ -84,6 +87,7 @@ def clip_tif(data):
         w = from_bounds(*BOX, transform=s.transform).round_offsets().round_lengths()
         a = s.read(1, window=w).astype(np.float32)
     a[(a < 0) | ~np.isfinite(a)] = np.nan
+    assert a.shape == REF_SHAPE, f"clip shape {a.shape}"
     return np.where(np.isnan(a), -1, np.round(a * 10)).astype(np.int16)
 
 
@@ -257,111 +261,108 @@ def catchments():
 
 def cmd_build():
     import geopandas as gpd
-    from shapely.geometry import shape
+    from scipy import sparse
     files = sorted(CLIP.glob("*.npy"))
     keys = [p.stem for p in files]
     shape_ = grid_shape()
     H, W = shape_
 
-    # normal per dekad-of-year (1-36), 1991-2020: mean and median, per pixel
-    log("climatology")
-    nyears = 99
-    clim_mean = np.zeros((36, H * W), np.float32)
-    clim_med = np.zeros((36, H * W), np.float32)
-    for j in range(36):
-        m, d = j // 3 + 1, j % 3 + 1
-        stack = []
-        for y in range(CLIM[0], CLIM[1] + 1):
-            p = CLIP / f"{y}.{m:02d}.{d}.npy"
-            if p.exists():
-                a = np.load(p).astype(np.float32).ravel()
-                a[a < 0] = np.nan
-                stack.append(a / 10)
-        if len(stack) < MIN_YEARS:
-            sys.exit(f"baseline incomplete for {m:02d}.{d}: {len(stack)} years; run download")
-        nyears = min(nyears, len(stack))
-        s = np.stack(stack)
-        clim_mean[j] = np.nanmean(s, 0)
-        clim_med[j] = np.nanmedian(s, 0)
-
-    recent = [k for k in keys if (int(k[:4]), int(k[5:7])) >= START]
-    prelim = {p.stem for p in CLIP.glob("*.prelim")}
-    R = np.stack([np.load(CLIP / f"{k}.npy").astype(np.float32).ravel() / 10 for k in recent])
-    R[R < 0] = np.nan
-    doy = np.array([(int(k[5:7]) - 1) * 3 + int(k[8]) - 1 for k in recent])
-
     # zones: woredas (same order as data.js) and gauge catchments
     data = json.loads((APP / "data" / "data.js").read_text(encoding="utf-8")[len("window.DATA="):-1])
     pcodes = [w["pcode"] for w in data["woredas"]]
+    nW = len(pcodes)
     geo = json.loads((APP / "data" / "geo.js").read_text(encoding="utf-8")[len("window.GEO="):-1])
     gdf = gpd.GeoDataFrame.from_features(geo["features"])  # property i = index into data.js woredas
-    gdf = gdf.set_index("i").reindex(range(len(pcodes)))
+    gdf = gdf.set_index("i").reindex(range(nW))
     log("woreda weights")
     wz = zone_weights(list(gdf.geometry), shape_)
     log("catchments")
     cat = catchments()
     cz = zone_weights(list(cat.values()), shape_)
+    zones = wz + cz
+    # zones x pixels weight matrix: a zone's mean is (weights . values) / (weights . has-data)
+    rows = np.concatenate([np.full(len(i), r) for r, (i, _) in enumerate(zones)])
+    Wm = sparse.csr_matrix((np.concatenate([w for _, w in zones]), (rows, np.concatenate([i for i, _ in zones]))),
+                           shape=(len(zones), H * W))
 
-    def zonal(z, A):
-        idx, w = z
-        if not len(idx):
-            return np.full(A.shape[0], np.nan)
-        v = A[:, idx]
-        ok = np.isfinite(v)
-        ww = np.where(ok, w, 0)
-        s = ww.sum(1)
-        return np.where(s > 0, np.nansum(np.where(ok, v, 0) * ww, 1) / np.where(s > 0, s, 1), np.nan)
+    def zonal(A):
+        """A: (t, pixels) with NaN for no data -> (t, zones)."""
+        ok = np.isfinite(A)
+        num = Wm @ np.where(ok, A, 0).T
+        den = Wm @ ok.T.astype(np.float32)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            return np.where(den > 0, num / den, np.nan).T
 
-    def series(z):
-        tot = zonal(z, R)
-        mean = zonal(z, clim_mean)[doy]
-        med = zonal(z, clim_med)[doy]
-        return tot, mean, med
+    def load(k):
+        a = np.load(CLIP / f"{k}.npy").astype(np.float32).ravel()
+        a[a < 0] = np.nan
+        return a / 10
+
+    # each zone's own 1991-2020 series per dekad of the year: base[j] is (years, zones)
+    log("baseline")
+    base = []
+    for j in range(36):
+        m, d = j // 3 + 1, j % 3 + 1
+        ks = [f"{y}.{m:02d}.{d}" for y in range(CLIM[0], CLIM[1] + 1) if (CLIP / f"{y}.{m:02d}.{d}.npy").exists()]
+        if len(ks) < MIN_YEARS:
+            sys.exit(f"baseline incomplete for {m:02d}.{d}: {len(ks)} years; run baseline")
+        base.append(zonal(np.stack([load(k) for k in ks])))
+    nyears = min(b.shape[0] for b in base)
+    normal = np.stack([np.nanmean(b, 0) for b in base])   # (36, zones)
+
+    recent = [k for k in keys if (int(k[:4]), int(k[5:7])) >= START]
+    prelim = {p.stem for p in CLIP.glob("*.prelim")}
+    log(f"{len(recent)} recent dekads")
+    Z = zonal(np.stack([load(k) for k in recent]))          # (dekads, zones)
+    doy = np.array([(int(k[5:7]) - 1) * 3 + int(k[8]) - 1 for k in recent])
 
     def r1(v):
-        return None if v is None or not np.isfinite(v) else round(float(v), 1)
+        return None if not np.isfinite(v) else round(float(v), 1)
 
-    def pct(tot, mean):
-        # % of the 1991-2020 mean; undefined in dekads that are normally (almost) dry
-        return [None if not (np.isfinite(t) and np.isfinite(m)) or m < 2 else round(float(t / m * 100))
-                for t, m in zip(tot, mean)]
+    def pct(v, n, floor):
+        # % of the 1991-2020 average; blank where the period is normally (almost) dry
+        return None if not (np.isfinite(v) and np.isfinite(n)) or n < floor else round(float(v / n * 100))
 
-    woreda = {"mm": [], "pct": [], "anom": []}
-    for z in wz:
-        tot, mean, med = series(z)
-        woreda["mm"].append([r1(v) for v in tot])
-        woreda["pct"].append(pct(tot, mean))
-        woreda["anom"].append([r1(t - m) for t, m in zip(tot, mean)])
-    # transpose to [dekad][woreda] like the other temporal layers
-    for k in woreda:
-        woreda[k] = [list(col) for col in zip(*woreda[k])]
+    def rank(v, b, n, floor):
+        # percentile of this value among the same period's 1991-2020 values (ties count half)
+        b = b[np.isfinite(b)]
+        if not np.isfinite(v) or not len(b) or not np.isfinite(n) or n < floor:
+            return None
+        return round(float(100 * ((b < v).sum() + 0.5 * (b == v).sum()) / len(b)))
+
+    woreda = {"mm": [], "pct": [], "rank": []}
+    for t, j in enumerate(doy):
+        woreda["mm"].append([r1(v) for v in Z[t, :nW]])
+        woreda["pct"].append([pct(Z[t, z], normal[j, z], 2) for z in range(nW)])
+        woreda["rank"].append([rank(Z[t, z], base[j][:, z], normal[j, z], 2) for z in range(nW)])
 
     gauges = {}
-    for (gk, poly), z in zip(cat.items(), cz):
-        tot, mean, med = series(z)
+    for c, (gk, poly) in enumerate(cat.items()):
+        z = nW + c
         area = gpd.GeoSeries([poly], crs=4326).to_crs("ESRI:102022").area.iloc[0] / 1e6
-        gauges[gk] = {"mm": [r1(v) for v in tot], "normal": [r1(v) for v in mean],
-                      "median": [r1(v) for v in med], "pct": pct(tot, mean), "area_km2": round(area)}
+        gauges[gk] = {"mm": [r1(Z[t, z]) for t in range(len(recent))],
+                      "normal": [r1(normal[j, z]) for j in doy],
+                      "pct": [pct(Z[t, z], normal[j, z], 2) for t, j in enumerate(doy)],
+                      "rank": [rank(Z[t, z], base[j][:, z], normal[j, z], 2) for t, j in enumerate(doy)],
+                      "area_km2": round(area)}
         log(f"  {gk}: catchment {area:,.0f} km2")
 
-    # monthly totals per woreda (only months with all three dekads) for the monthly layers
+    # monthly totals (months with all three dekads); the baseline month is the sum of its dekads each year
     months = data["months"]
-    mon = {"mm": [], "pct": []}
+    mon = {"mm": [], "pct": [], "rank": []}
     for m in months:
-        ix = [j for j, k in enumerate(recent) if k[:7] == m.replace("-", ".")]
+        ix = [t for t, k in enumerate(recent) if k[:7] == m.replace("-", ".")]
         if len(ix) < 3:
-            mon["mm"].append([None] * len(pcodes)); mon["pct"].append([None] * len(pcodes))
+            for k in mon:
+                mon[k].append([None] * nW)
             continue
-        row_mm, row_pct = [], []
-        for wi in range(len(pcodes)):
-            vals = [woreda["mm"][j][wi] for j in ix]
-            if any(v is None for v in vals):
-                row_mm.append(None); row_pct.append(None); continue
-            t = sum(vals)
-            nm = sum(zonal(wz[wi], clim_mean[[doy[j]]])[0] for j in ix)
-            row_mm.append(round(t, 1))
-            row_pct.append(round(t / nm * 100) if nm >= 5 else None)
-        mon["mm"].append(row_mm); mon["pct"].append(row_pct)
+        js = [doy[t] for t in ix]
+        tot = Z[ix, :nW].sum(0)
+        bm = sum(base[j][:nyears, :nW] for j in js)
+        nm = normal[js, :nW].sum(0)
+        mon["mm"].append([r1(v) for v in tot])
+        mon["pct"].append([pct(tot[z], nm[z], 5) for z in range(nW)])
+        mon["rank"].append([rank(tot[z], bm[:, z], nm[z], 5) for z in range(nW)])
 
     out = {
         "dekads": recent,

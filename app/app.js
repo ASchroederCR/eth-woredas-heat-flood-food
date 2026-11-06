@@ -13,6 +13,8 @@
   CLASSIC.Forecast = CLASSIC.Daily = CLASSIC.Heat;
   CLASSIC.Rainfall = ['#e0f3ef', '#b3e2d6', '#7fcdbb', '#41b6c4', '#1d91c0', '#225ea8', '#0c2c84'];
   // rainfall vs normal: brown (drier) through a neutral middle (80-120%) to green (wetter)
+  // percentile classes (driest 10% ... wettest 10%): five steps of the same brown-green scale
+  const RANK5 = ['#a6611a', '#dfc27d', '#f0efec', '#80cdc1', '#018571'];
   const BRBG = ['#8c510a', '#d8b365', '#f6e8c3', '#f0efec', '#c7eae5', '#5ab4ac', '#01665e'];
   // Anomalies keep a diverging ramp in both schemes: the sign (above/below normal) is the point.
   const DIVERGING = ['#1c5cab', '#6da7ec', '#b7d3f6', '#f0efec', '#f4b8b7', '#e66767', '#b22b2b'];
@@ -51,19 +53,31 @@
   const dekIdx = new Map(dekads.map((k, j) => [k, j]));
   const dekOfDay = (d) => dekIdx.get(`${d.slice(0, 4)}.${d.slice(5, 7)}.${+d.slice(8, 10) <= 10 ? 1 : +d.slice(8, 10) <= 20 ? 2 : 3}`);
   const monthIdx = new Map(months.map((m, t) => [m, t]));
+  const PRE0 = RN ? (RN.prelim.indexOf(true) < 0 ? dekads.length : RN.prelim.indexOf(true)) : 0;   // first preliminary dekad
+  const isPre = (j) => j >= PRE0;
   const RAIN_KEYS = [];
   if (RN && dekads.length) {
     const span = `${dekName(dekads[0], true)} – ${dekName(dekads[dekads.length - 1], true)}`;
-    const pctDesc = `Rainfall as a share of the ${RN.clim.replace('-', '–')} average for the same dekads (CHIRPS v3). Brown is drier than normal, green wetter; the middle class (80–120%) is near normal.`;
+    const clim = RN.clim.replace('-', '–');
+    const nPre = RN.prelim.filter(Boolean).length;
+    const preNote = nPre ? ` The last ${nPre === 1 ? 'dekad is' : `${nPre} dekads are`} CHIRPS preliminary data, replaced as the final product arrives.` : '';
+    const rankDesc = (per) => `How this ${per}'s rainfall ranks against the same ${per} in each year ${clim}, as a percentile ` +
+      '(50 = a typical year). Classes: driest 10%, below normal (lowest third), near normal (middle third), above normal, wettest 10%. ';
+    const pctDesc = (per) => `Rainfall as a share of the ${clim} average for the same ${per}. Rainfall is skewed (a few very wet years ` +
+      `raise the average), so a typical ${per} comes in under 100%: the percentile layer is the fairer guide to "normal". `;
     const add = {
       dk_mm: { label: 'Rainfall per dekad', unit: 'mm', dekadal: true, values: RN.woreda.mm, breaks: [1, 10, 25, 50, 100, 150],
-        desc: `CHIRPS v3 rainfall total for each 10-day period (dekad), ${span}; area mean over the woreda.` },
-      dk_pct: { label: 'Dekad rainfall vs normal', unit: '%', dekadal: true, values: RN.woreda.pct, breaks: [25, 50, 80, 120, 150, 200], ramp: BRBG, ref: 100,
-        desc: pctDesc + ' Blank where the dekad is normally dry (under 2 mm).' },
+        desc: `CHIRPS v3 rainfall total for each 10-day period (dekad), ${span}; area mean over the woreda.` + preNote },
+      dk_rank: { label: 'Dekad rainfall vs normal', unit: 'percentile', dekadal: true, values: RN.woreda.rank, breaks: [10, 33.4, 66.7, 90], ramp: RANK5, ref: 50,
+        refLabel: `median year (${clim})`, desc: rankDesc('dekad') + 'Blank where the dekad is normally dry (under 2 mm).' + preNote },
+      dk_pct: { label: 'Dekad rainfall vs average', unit: '%', dekadal: true, values: RN.woreda.pct, breaks: [25, 50, 80, 120, 150, 200], ramp: BRBG, ref: 100,
+        refLabel: `${clim} average`, desc: pctDesc('dekad') + 'Blank where the dekad is normally dry (under 2 mm).' + preNote },
       rain_mm: { label: 'Monthly rainfall', unit: 'mm', temporal: true, values: RN.monthly.mm, breaks: [5, 25, 50, 100, 200, 300],
         desc: 'CHIRPS v3 rainfall total for the month (its three dekads); area mean over the woreda. Blank for months not yet complete.' },
-      rain_pct: { label: 'Monthly rainfall vs normal', unit: '%', temporal: true, values: RN.monthly.pct, breaks: [25, 50, 80, 120, 150, 200], ramp: BRBG, ref: 100,
-        desc: pctDesc + ' Blank where the month is normally dry (under 5 mm).' },
+      rain_rank: { label: 'Monthly rainfall vs normal', unit: 'percentile', temporal: true, values: RN.monthly.rank, breaks: [10, 33.4, 66.7, 90], ramp: RANK5, ref: 50,
+        refLabel: `median year (${clim})`, desc: rankDesc('month') + 'Blank where the month is normally dry (under 5 mm).' },
+      rain_pct: { label: 'Monthly rainfall vs average', unit: '%', temporal: true, values: RN.monthly.pct, breaks: [25, 50, 80, 120, 150, 200], ramp: BRBG, ref: 100,
+        refLabel: `${clim} average`, desc: pctDesc('month') + 'Blank where the month is normally dry (under 5 mm).' },
     };
     for (const [k, v] of Object.entries(add)) { M[k] = { ...v, group: 'Rainfall' }; RAIN_KEYS.push(k); }
   }
@@ -108,7 +122,7 @@
     if (u === 'people' || u === 'person-days') return Math.round(v).toLocaleString('en');
     if (u === 'days') return (Math.round(v * 10) / 10).toLocaleString('en');
     if (u === '') return v.toFixed(2);
-    if (u === '%') return Math.round(v) + '';
+    if (u === 'percentile' || (u === '%' && M[key].ref)) return Math.round(v) + '';
     const s = (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(1));
     return (M[key].diverging && v > 0 ? '+' : '') + s;
   }
@@ -117,9 +131,11 @@
     const s = fmt(v, key);
     if (s === '—' || !u) return s;
     if (u === 'days' && s === '1') return '1 day';
-    if (u === '%') return s + '%';
+    if (u === '%' && M[key].ref) return s + '%';
+    if (u === 'percentile') return ordinal(Math.round(v)) + ' percentile';
     return s + ' ' + u;
   };
+  const ordinal = (n) => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
   function compact(v) {
     const a = Math.abs(v);
     if (a >= 1e6) return +(v / 1e6).toFixed(a >= 1e7 ? 0 : 1) + 'M';
@@ -199,6 +215,10 @@
     } else if (spec.unit === 'days') {
       const nz = all.filter((v) => v > 0);
       b = nz.length ? [0.5, ...[0.2, 0.4, 0.6, 0.8, 0.95].map((p) => Math.max(1, Math.round(quant(nz, p))))] : [0.5];
+    } else if (all.length && all[0] >= 0 && quant(all, 1 / 7) <= 0) {
+      // mostly zeros (e.g. exposure person-days): a "none" class, then sevenths... of the non-zero values
+      const nz = all.filter((v) => v > 0);
+      b = nz.length ? [0.5, ...[0.2, 0.4, 0.6, 0.8, 0.95].map((p) => quant(nz, p))] : [0.5];
     } else {
       b = [1, 2, 3, 4, 5, 6].map((k) => quant(all, k / 7));
     }
@@ -410,6 +430,7 @@
     state.k = k;
     dekSlider.value = k;
     $('dekLabel').textContent = dekName(dekads[k], true);
+    $('dekPre').hidden = !isPre(k);
     const t = monthIdx.get(dekMonth(dekads[k]));
     $('dekBadge').hidden = !(t !== undefined && D.enso.elnino[t]);
     if (M[mapKey()].dekadal) paint();
@@ -727,7 +748,7 @@
     }
     if (spec.ref) {
       s += `<line x1="${pad.l}" x2="${W - pad.r}" y1="${y(spec.ref)}" y2="${y(spec.ref)}" stroke="var(--ink-2)" stroke-dasharray="6 4"/>`;
-      s += `<text x="${pad.l + 4}" y="${y(spec.ref) - 4}">normal (${RN.clim.replace('-', '–')} average)</text>`;
+      s += `<text x="${pad.l + 4}" y="${y(spec.ref) - 4}">${spec.refLabel || 'normal'}</text>`;
     }
     for (let t = 0; t < N; t++) {
       const tick = daily ? (N - 1 - t) % 7 === 0 : dek ? dekads[t].endsWith('.01.1') || t === 0 : months[t].endsWith('-01') || t === 0;
@@ -748,7 +769,7 @@
     };
     // observed part solid; forecast part dashed, joined to the last observed day
     const line = (arr, c) => {
-      const split = daily && hasFc ? DY.fc_start : N;
+      const split = daily && hasFc ? DY.fc_start : dek && PRE0 < N ? PRE0 : N;
       let out = `<path d="${path(arr, 0, split - 1)}" fill="none" stroke="${c}" stroke-width="2" stroke-linejoin="round"/>`;
       if (split < N) out += `<path d="${path(arr, Math.max(0, split - 1), N - 1)}" fill="none" stroke="${c}" stroke-width="2" stroke-dasharray="5 4" stroke-linejoin="round"/>`;
       return out;
@@ -775,7 +796,7 @@
       if (daily) {
         head = `<b>${dayName(days[t], true)}</b>${isFcDay(t) ? ' · <b>Forecast</b>' : ''}`;
       } else if (dek) {
-        head = `<b>${dekName(dekads[t], true)}</b>${ensoAt(t) ? ' · <b>El Niño</b>' : ''}`;
+        head = `<b>${dekName(dekads[t], true)}</b>${ensoAt(t) ? ' · <b>El Niño</b>' : ''}${isPre(t) ? ' <span class="m">· preliminary</span>' : ''}`;
       } else {
         const prov = D.provisional_share[t] > 0.5 ? '<br><span class="m">Mostly Open-Meteo (provisional)</span>' : '';
         head = `<b>${monthName(months[t])}</b>${D.enso.elnino[t] ? ' · <b>El Niño</b>' : ''}` +
@@ -1160,7 +1181,7 @@
       let nd = '';
       for (const r of runs) {
         const v = R.mm[r.j], x0 = x(r.k0) - bw / 2, w = Math.max(1, (r.k1 - r.k0 + 1) * bw - 1.5);
-        if (v !== null) svg += `<rect x="${x0 + 0.75}" y="${ry(v)}" width="${w}" height="${Math.max(0, bot - ry(v))}" fill="var(--rain)" rx="1"/>`;
+        if (v !== null) svg += `<rect x="${x0 + 0.75}" y="${ry(v)}" width="${w}" height="${Math.max(0, bot - ry(v))}" fill="var(--rain)"${isPre(r.j) ? ' fill-opacity="0.5"' : ''} rx="1"/>`;
         if (R.normal[r.j] !== null) nd += `M${x0},${ry(R.normal[r.j])}h${(r.k1 - r.k0 + 1) * bw}`;
       }
       svg += `<path d="${nd}" fill="none" stroke="var(--ink-2)" stroke-width="1.5" stroke-dasharray="3 2"/>`;
@@ -1185,8 +1206,8 @@
         (Qc ? `<br>${esc(fl.st[cmpK].label)}: <b>${fmtQ(Qc[k])}</b>` : '') +
         (nm ? `<br>Normal (1991–2020 median): ${fmtQ(nm)} <span class="m">· ${v === null ? '—' : Math.round((100 * v) / nm) + '%'}</span>` : '') +
         `<br>${v === null ? '' : `${(v / s.rp[2]).toFixed(2)} × RP2`}${s.trigger && inOND(fl.days[k]) && v !== null ? ` <span class="m">· ${Math.round((100 * v) / s.trigger)}% of OND trigger</span>` : ''}` +
-        (j !== undefined ? `<br>Catchment rain ${dekName(dekads[j])}: <b>${R.mm[j] === null ? '—' : R.mm[j] + ' mm'}</b>` +
-          (R.pct[j] !== null ? ` <span class="m">· ${R.pct[j]}% of normal</span>` : '') : '');
+        (j !== undefined ? `<br>Catchment rain ${dekName(dekads[j])}${isPre(j) ? ' (prelim.)' : ''}: <b>${R.mm[j] === null ? '—' : R.mm[j] + ' mm'}</b>` +
+          (R.rank[j] !== null ? ` <span class="m">· ${ordinal(R.rank[j])} percentile, ${R.pct[j]}% of average</span>` : '') : '');
       ftip.hidden = false;
       const wrap = fchart.parentElement.getBoundingClientRect();
       ftip.style.left = Math.min(ev.clientX - wrap.left + 12, wrap.width - ftip.offsetWidth - 8) + 'px';
@@ -1236,7 +1257,7 @@
       const tot = js.reduce((t, j) => (t === null || R.mm[j] === null ? null : t + R.mm[j]), 0);
       const nrm = js.reduce((t, j) => (t === null || R.normal[j] === null ? null : t + R.normal[j]), 0);
       $('floodStats').innerHTML += card('Catchment rainfall, last 3 dekads', tot === null ? '—' : `${Math.round(tot)} mm`,
-        `${dekName(dekads[js[0]])} – ${dekName(dekads[js[2]], true)}${tot !== null && nrm >= 5 ? ` · ${Math.round((100 * tot) / nrm)}% of normal` : ''}`);
+        `${dekName(dekads[js[0]])} – ${dekName(dekads[js[2]], true)}${isPre(js[2]) ? " (incl. preliminary)" : ""}${tot !== null && nrm >= 5 ? ` · ${Math.round((100 * tot) / nrm)}% of average` : ''}`);
     }
     const cv = RV && $('gaugeCmp').value !== '' ? +$('gaugeCmp').value : null;
     if (cv !== null) {
