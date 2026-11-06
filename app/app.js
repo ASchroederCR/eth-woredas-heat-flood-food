@@ -413,7 +413,7 @@
   };
   const styleUrl = () => (isDark() ? 'mapbox://styles/mapbox/dark-v11' : 'mapbox://styles/mapbox/light-v11');
   const map = new mapboxgl.Map({
-    container: 'map', style: styleUrl(), center: [40.5, 9.1], zoom: 4.6, attributionControl: true, boxZoom: false,
+    container: 'map', style: styleUrl(), center: [40.5, 9.1], zoom: 4.6, attributionControl: true, boxZoom: false, preserveDrawingBuffer: true,
   });
   map.once('load', () => {
     map.resize();
@@ -1655,6 +1655,250 @@
   } else {
     $('foodWrap').hidden = true; $('marketCtl').hidden = true;
   }
+
+  // ---------- PNG export: every chart and the map, with title, legend and sources ----------
+  const SITE = 'aschroedercr.github.io/eth-woredas-heat-flood-food';
+  const SRC = {
+    heat: 'Heat: CrisisReady HeatReady API (ERA5-Land, Open-Meteo)',
+    enso: 'El Niño: NOAA CPC ONI',
+    pop: 'Population: LandScan 2024; age: WorldPop R2025A',
+    flood: 'River flow: GloFAS v4 (Copernicus EMS) via Open-Meteo; gauges and OND trigger: OCHA',
+    rivers: 'Rivers: HydroRIVERS v1.0',
+    food: 'Food prices: World Bank RTFP',
+    base: 'Boundaries: OCHA COD-AB; basemap © Mapbox © OpenStreetMap',
+  };
+  const PNG_FONT = getComputedStyle(document.body).fontFamily || 'system-ui, sans-serif';
+  const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+
+  // SVG -> image: copy computed styles inline (the page CSS and its var() colours don't travel)
+  const SVG_PROPS = ['fill', 'fill-opacity', 'stroke', 'stroke-width', 'stroke-dasharray', 'stroke-opacity', 'stroke-linecap',
+    'stroke-linejoin', 'opacity', 'font-size', 'font-family', 'font-weight', 'text-anchor', 'dominant-baseline', 'font-variant-numeric'];
+  function svgImage(svg) {
+    const r = svg.getBoundingClientRect();
+    const w = Math.round(r.width) || +svg.getAttribute('width') || 600, h = Math.round(r.height) || +svg.getAttribute('height') || 300;
+    const clone = svg.cloneNode(true);
+    const src = [svg, ...svg.querySelectorAll('*')], dst = [clone, ...clone.querySelectorAll('*')];
+    src.forEach((el, i) => {
+      const cs = getComputedStyle(el);
+      dst[i].setAttribute('style', SVG_PROPS.map((p) => `${p}:${cs.getPropertyValue(p)}`).join(';') + (cs.display === 'none' ? ';display:none' : ''));
+    });
+    clone.querySelectorAll('title, #hov, #fhov, #fphov, #hit, #fhit, #fphit').forEach((el) => el.remove());
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    clone.setAttribute('width', w); clone.setAttribute('height', h);
+    const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(clone)], { type: 'image/svg+xml' }));
+    return new Promise((res, rej) => {
+      const img = new Image();
+      img.onload = () => { URL.revokeObjectURL(url); res({ img, w, h }); };
+      img.onerror = (e) => { URL.revokeObjectURL(url); rej(e); };
+      img.src = url;
+    });
+  }
+
+  // legend items read from an on-page legend row (swatch colour + label)
+  function legendFromRow(row) {
+    if (!row) return [];
+    return [...row.children].filter((s) => s.tagName !== 'BUTTON' && !s.hidden && getComputedStyle(s).display !== 'none').map((s) => {
+      const i = s.querySelector('i');
+      const label = s.textContent.trim();
+      if (!i) return { kind: 'text', label };
+      const cs = getComputedStyle(i);
+      if (cs.borderTopStyle === 'dashed') return { kind: 'dash', color: cs.borderTopColor, label };
+      if (i.classList.contains('box') || i.classList.contains('bAllKey') || i.classList.contains('bOneKey')) return { kind: 'box', color: cs.backgroundColor, stroke: cs.borderTopColor, label };
+      return { kind: 'line', color: cs.backgroundColor, label };
+    }).filter((it) => it.label);
+  }
+
+  // wrap text to a width; returns lines
+  function wrap(ctx, text, width) {
+    const words = String(text).split(/\s+/), lines = [];
+    let line = '';
+    for (const w of words) {
+      const t = line ? line + ' ' + w : w;
+      if (ctx.measureText(t).width > width && line) { lines.push(line); line = w; } else line = t;
+    }
+    if (line) lines.push(line);
+    return lines;
+  }
+
+  // draw legend items flowing left to right; returns the height used (dry run when draw = false)
+  function drawLegend(ctx, items, x0, y0, width, draw) {
+    ctx.font = `12px ${PNG_FONT}`;
+    let x = x0, y = y0, lineH = 0;
+    const rowH = 20, gap = 18;
+    for (const it of items) {
+      let w;
+      if (it.kind === 'ramp') w = it.colors.length * 26 + ctx.measureText(it.label || '').width + 12;
+      else if (it.kind === 'biv') w = 3 * 16 + 12 + Math.max(ctx.measureText(it.xLabel).width, ctx.measureText(it.yLabel).width) + 8;
+      else w = (it.kind === 'text' ? 0 : 22) + ctx.measureText(it.label).width;
+      const h = it.kind === 'ramp' ? 30 : it.kind === 'biv' ? 52 : rowH;
+      // a text label starts a new row (it introduces the items after it)
+      if (x > x0 && (x + w > x0 + width || it.kind === 'text')) { y += lineH + 4; x = x0; lineH = 0; }
+      if (draw) drawItem(ctx, it, x, y);
+      x += w + gap; lineH = Math.max(lineH, h);
+    }
+    return y - y0 + lineH;
+  }
+  function drawItem(ctx, it, x, y) {
+    const cy = y + 10;
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = cssVar('--ink-2');
+    if (it.kind === 'text') { ctx.fillText(it.label, x, cy); return; }
+    if (it.kind === 'line' || it.kind === 'dash') {
+      ctx.strokeStyle = it.color; ctx.lineWidth = 2.5; ctx.setLineDash(it.kind === 'dash' ? [5, 4] : []);
+      ctx.beginPath(); ctx.moveTo(x, cy); ctx.lineTo(x + 16, cy); ctx.stroke(); ctx.setLineDash([]);
+    } else if (it.kind === 'box') {
+      ctx.fillStyle = it.color; ctx.fillRect(x, cy - 6, 14, 12);
+      if (it.stroke) { ctx.strokeStyle = it.stroke; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, cy - 5.5, 13, 11); }
+    } else if (it.kind === 'circle') {
+      ctx.fillStyle = it.color; ctx.strokeStyle = it.stroke || '#0b0b0b'; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.arc(x + 7, cy, Math.min(it.r || 5, 8), 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
+    } else if (it.kind === 'diamond') {
+      ctx.fillStyle = it.color; ctx.strokeStyle = '#0b0b0b'; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(x + 7, cy - 7); ctx.lineTo(x + 14, cy); ctx.lineTo(x + 7, cy + 7); ctx.lineTo(x, cy); ctx.closePath(); ctx.fill(); ctx.stroke();
+    } else if (it.kind === 'ramp') {
+      it.colors.forEach((c, i) => { ctx.fillStyle = c; ctx.fillRect(x + i * 26, y + 2, 24, 10); });
+      ctx.fillStyle = cssVar('--ink-2'); ctx.font = `10px ${PNG_FONT}`; ctx.textAlign = 'center';
+      it.ticks.forEach((t, i) => ctx.fillText(t, x + (i + 1) * 26 - 1, y + 22));
+      ctx.textAlign = 'left'; ctx.font = `12px ${PNG_FONT}`;
+      ctx.fillText(it.label || '', x + it.colors.length * 26 + 8, y + 7);
+      return;
+    } else if (it.kind === 'biv') {
+      for (let p = 2; p >= 0; p--) for (let h = 0; h < 3; h++) { ctx.fillStyle = BIV[p][h]; ctx.fillRect(x + h * 16, y + (2 - p) * 16, 15, 15); }
+      ctx.fillStyle = cssVar('--ink-2');
+      ctx.fillText(`↑ ${it.yLabel}`, x + 3 * 16 + 10, y + 8);
+      ctx.fillText(`${it.xLabel} →`, x + 3 * 16 + 10, y + 40);
+      return;
+    }
+    ctx.fillStyle = cssVar('--ink-2');
+    ctx.fillText(it.label, x + 22, cy);
+  }
+
+  // lay out title, subtitle, legend, the graphic(s) and a source line on one canvas, then download
+  async function exportPNG({ name, title, sub, legend = [], graphics, sources }) {
+    const S = 2, pad = 20, gap = 16;
+    const gw = graphics.reduce((s, g) => s + g.w, 0) + gap * (graphics.length - 1);
+    const W = Math.max(640, gw + 2 * pad), inner = W - 2 * pad;
+    const m = document.createElement('canvas').getContext('2d');
+    m.font = `600 18px ${PNG_FONT}`; const tLines = wrap(m, title, inner);
+    m.font = `13px ${PNG_FONT}`; const sLines = sub ? wrap(m, sub, inner) : [];
+    const legH = legend.length ? drawLegend(m, legend, pad, 0, inner, false) + 6 : 0;
+    m.font = `11px ${PNG_FONT}`;
+    const foot = `Source: ${sources.join(' · ')}. Ethiopia Woredas: Heat, Flooding, and Food Prices — ${SITE} · exported ${new Date().toISOString().slice(0, 10)}`;
+    const fLines = wrap(m, foot, inner);
+    const gh = Math.max(...graphics.map((g) => g.h));
+    const H = pad + tLines.length * 24 + sLines.length * 18 + (sLines.length ? 4 : 0) + 8 + legH + gh + 12 + fLines.length * 15 + pad;
+    const cv = document.createElement('canvas'); cv.width = W * S; cv.height = H * S;
+    const ctx = cv.getContext('2d'); ctx.scale(S, S);
+    ctx.fillStyle = cssVar('--surface') || '#ffffff'; ctx.fillRect(0, 0, W, H);
+    let y = pad;
+    ctx.textBaseline = 'top'; ctx.fillStyle = cssVar('--ink'); ctx.font = `600 18px ${PNG_FONT}`;
+    for (const l of tLines) { ctx.fillText(l, pad, y); y += 24; }
+    ctx.fillStyle = cssVar('--ink-2'); ctx.font = `13px ${PNG_FONT}`;
+    for (const l of sLines) { ctx.fillText(l, pad, y); y += 18; }
+    y += (sLines.length ? 4 : 0) + 8;
+    if (legend.length) { drawLegend(ctx, legend, pad, y, inner, true); y += legH; }
+    let x = pad;
+    for (const g of graphics) { ctx.drawImage(g.img, x, y, g.w, g.h); x += g.w + gap; }
+    y += gh + 12;
+    ctx.textBaseline = 'top'; ctx.fillStyle = cssVar('--muted'); ctx.font = `11px ${PNG_FONT}`;
+    for (const l of fLines) { ctx.fillText(l, pad, y); y += 15; }
+    const blob = await new Promise((res) => cv.toBlob(res, 'image/png'));
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `eth-woredas_${slug(name)}_${new Date().toISOString().slice(0, 10)}.png`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    return { width: cv.width, height: cv.height, bytes: blob.size, file: a.download };
+  }
+
+  const txt = (id) => ($(id) ? $(id).innerText.replace(/\s*\n\s*/g, ' ').trim() : '');
+  const svgsIn = (...ids) => ids.map((id) => $(id) && $(id).querySelector('svg')).filter(Boolean);
+  const FL_LEGEND = () => FL_CLS.map((c) => ({ kind: 'circle', color: c.c, r: c.r, label: c.label }));
+  const EXPORTS = {
+    chart: () => ({ name: txt('chartTitle'), title: txt('chartTitle'), sub: state.sel.length ? selLabel() : 'Ethiopia',
+      legend: legendFromRow($('chartLegend')), svgs: svgsIn('chart'), sources: [SRC.heat, SRC.enso, SRC.pop] }),
+    scatter: () => ({ name: txt('scatterTitle'), title: txt('scatterTitle'), sub: `${M[state.y].label} vs ${M[state.x].label}${state.xLog ? ' (log x)' : ''} · ${txt('rho')}`,
+      legend: [], svgs: svgsIn('scatter'), sources: [SRC.heat, SRC.pop] }),
+    flood: () => ({ name: txt('floodTitle'), title: txt('floodTitle'), sub: [txt('floodWhere'), txt('floodLinks')].filter(Boolean).join(' · '),
+      legend: legendFromRow($('floodWrap').querySelector('.fleg')), svgs: svgsIn('fchart'), sources: [SRC.flood, SRC.enso, SRC.rivers] }),
+    strip: () => ({ name: 'all-gauges-monthly-peak', title: 'All flood gauges · monthly peak discharge relative to the 2-year flood (RP2)',
+      sub: 'Bar above the months marks El Niño; dashed column is the month selected on the map', legend: FL_LEGEND(), svgs: svgsIn('fstrip'), sources: [SRC.flood, SRC.enso] }),
+    food: () => ({ name: txt('foodTitle'), title: txt('foodTitle'), sub: txt('foodWhere'),
+      legend: legendFromRow($('foodWrap').querySelector('.fleg')), svgs: svgsIn('fpchart'), sources: [SRC.food, SRC.heat, SRC.flood, SRC.enso] }),
+    lags: () => ({ name: `lags-${txt('foodTitle')}`, title: `Lagged association with prices · ${txt('foodTitle')}`, sub: txt('lagNote'),
+      legend: legendFromRow($('foodWrap').querySelectorAll('.fleg')[1]), svgs: svgsIn('lagHeat', 'lagFlood'), sources: [SRC.food, SRC.heat, SRC.flood] }),
+  };
+  async function exportChart(key) {
+    const spec = EXPORTS[key]();
+    if (!spec.svgs.length) throw new Error('nothing drawn to export');
+    const graphics = await Promise.all(spec.svgs.map(svgImage));
+    return exportPNG({ ...spec, graphics });
+  }
+
+  // the map: the WebGL canvas plus a legend for whatever is switched on
+  function mapLegend() {
+    const items = [];
+    if (state.mode === 'bi') {
+      items.push({ kind: 'biv', xLabel: `${M[state.y].label} (thirds)`, yLabel: `${M[state.x].label} (thirds)` });
+    } else {
+      const key = state.metric, b = breaks(key), ramp = rampFor(key).slice(-(b.length + 1));
+      items.push({ kind: 'ramp', colors: ramp, ticks: b.map((v) => fmt(v, key)), label: `${M[key].label}${M[key].unit ? ` (${M[key].unit})` : ''}` });
+    }
+    items.push({ kind: 'box', color: cssVar('--nodata'), label: 'No data' });
+    const on = (id) => map.getLayer(id) && map.getLayoutProperty(id, 'visibility') !== 'none';
+    if (fl && on('g-pt')) items.push({ kind: 'text', label: `Gauges (${flPeriod().label}):` }, ...FL_LEGEND());
+    if (RV && on('rv-line')) items.push({ kind: 'line', color: isDark() ? '#5aa9f0' : '#1f5fa8', label: 'Rivers linking the gauges' },
+      { kind: 'line', color: '#ff4f1f', label: `Downstream of ${fl.st[fl.gi].label}` });
+    if (fp && on('m-pt')) {
+      const ms = FP_MEAS[fp.meas];
+      items.push({ kind: 'diamond', color: '#f0efec', label: 'Food markets:' },
+        { kind: 'ramp', colors: DIVERGING, ticks: ms.breaks.map(String), label: `${FP.commodities.find((c) => c.key === fp.com).label}, ${ms.label.toLowerCase()} (${ms.unit})` });
+    }
+    return items;
+  }
+  async function exportMap() {
+    // wait (briefly) for tiles to finish; the drawing buffer keeps the last frame, so read it either way
+    const settle = (ev, ms) => new Promise((r) => { const t = setTimeout(r, ms); map.once(ev, () => { clearTimeout(t); r(); }); });
+    if (!map.loaded()) await settle('idle', 4000);
+    map.triggerRepaint(); await settle('render', 500);
+    const c = map.getCanvas(), r = c.getBoundingClientRect();
+    const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = c.toDataURL('image/png'); });
+    const key = mapKey();
+    const title = state.mode === 'bi'
+      ? `${M[state.y].label} × ${M[state.x].label}${periodOf(state.y) ? ` · ${periodOf(state.y)}` : ''}`
+      : `${M[key].label}${periodOf(key) ? ` · ${periodOf(key)}` : ''}`;
+    const sub = `Ethiopia woredas${state.sel.length ? ` · selected: ${selLabel()}` : ''}`;
+    const srcs = [SRC.heat, SRC.pop, SRC.enso];
+    if (fl && map.getLayer('g-pt') && map.getLayoutProperty('g-pt', 'visibility') !== 'none') srcs.push(SRC.flood, SRC.rivers);
+    if (fp && map.getLayer('m-pt') && map.getLayoutProperty('m-pt', 'visibility') !== 'none') srcs.push(SRC.food);
+    srcs.push(SRC.base);
+    return exportPNG({ name: `map-${title}`, title, sub, legend: mapLegend(), graphics: [{ img, w: Math.round(r.width), h: Math.round(r.height) }], sources: srcs });
+  }
+
+  // buttons: one per chart (data-png="key") plus a map control
+  for (const b of document.querySelectorAll('button.png')) {
+    b.addEventListener('click', async () => {
+      const label = b.textContent; b.disabled = true; b.textContent = 'Saving…';
+      try { await (b.dataset.png === 'map' ? exportMap() : exportChart(b.dataset.png)); } catch (e) { console.error('PNG export failed:', e); alert('Sorry, the PNG export failed.'); }
+      b.disabled = false; b.textContent = label;
+    });
+  }
+  class PngControl {
+    onAdd() {
+      this.el = document.createElement('div');
+      this.el.className = 'mapboxgl-ctrl mapboxgl-ctrl-group';
+      this.el.innerHTML = '<button type="button" class="png mapPng" data-png="map" title="Download the map as PNG" aria-label="Download the map as PNG">PNG</button>';
+      const b = this.el.querySelector('button');
+      b.addEventListener('click', async () => {
+        b.disabled = true;
+        try { await exportMap(); } catch (e) { console.error('PNG export failed:', e); alert('Sorry, the map export failed.'); }
+        b.disabled = false;
+      });
+      return this.el;
+    }
+    onRemove() { this.el.remove(); }
+  }
+  map.addControl(new PngControl(), 'top-right');
 
   // ---------- theme ----------
   $('themeBtn').addEventListener('click', () => {

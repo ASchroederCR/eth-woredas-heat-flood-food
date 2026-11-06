@@ -66,6 +66,10 @@ Then browse to http://localhost:8766. `app/config.js` holds the Mapbox public to
   measure in month *t*, for lags 0–6 months: pooled over all markets (each market's own mean removed)
   and for the selected market. *Survey months only* restricts the test to months with a survey price
   for that commodity.
+- **PNG export:** every chart has a *PNG* button, and the map has one under the zoom buttons. Each
+  saves a 2× resolution image with the chart's title, subtitle, legend and a source line (plus the
+  Mapbox / OpenStreetMap attribution for the map). The map image shows what's switched on: the layer or
+  bivariate legend, gauges, rivers and markets. It uses the page's current theme (light or dark).
 - **Scatter:** any population/age metric (x, log scale for counts) against any heat metric (y) for
   the selected month, with Spearman ρ. In bivariate mode its dots take the map colours and show the
   tercile cut lines.

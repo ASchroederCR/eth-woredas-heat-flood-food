@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Ethiopia Woredas: Heat, Flooding, and Food Prices (June 2023 →)</title>
   <link href="https://api.mapbox.com/mapbox-gl-js/v3.7.0/mapbox-gl.css" rel="stylesheet">
-  <link href="style.css?v=10" rel="stylesheet">
+  <link href="style.css?v=11" rel="stylesheet">
 </head>
 <body>
   <header>
@@ -108,6 +108,7 @@
       <div class="chartHead">
         <h2 id="chartTitle"></h2>
         <div class="legendRow" id="chartLegend"></div>
+        <button type="button" class="png" data-png="chart" title="Download this chart as PNG">PNG</button>
       </div>
       <div id="chart"></div>
       <div id="chartTip" class="ftip" hidden></div>
@@ -117,6 +118,7 @@
       <div class="chartHead">
         <h2 id="scatterTitle"></h2>
         <span id="rho" class="rho"></span>
+        <button type="button" class="png" data-png="scatter" title="Download this scatterplot as PNG">PNG</button>
       </div>
       <div class="scatterCtl">
         <label><span>x</span><select id="sX" data-axis="x"></select></label>
@@ -147,6 +149,7 @@
         <label class="check"><input type="checkbox" id="showNormal" checked> Normal range</label>
         <button type="button" id="zoomGauge">Zoom to gauge</button>
         <button type="button" id="selZone"></button>
+        <button type="button" class="png" data-png="flood" title="Download this chart as PNG">PNG</button>
       </div>
     </div>
     <div class="legendRow fleg">
@@ -160,7 +163,10 @@
     <div id="fchart"></div>
     <div id="fchartTip" class="ftip" hidden></div>
     <div id="floodStats"></div>
-    <h2 class="stripTitle">All gauges · monthly peak relative to RP2</h2>
+    <div class="chartHead stripHead">
+      <h2 class="stripTitle">All gauges · monthly peak relative to RP2</h2>
+      <button type="button" class="png" data-png="strip" title="Download this grid as PNG">PNG</button>
+    </div>
     <p class="desc">Click a cell to show that gauge and month. Colours match the gauge legend in the side panel.</p>
     <div id="fstrip"></div>
     <div id="fstripTip" class="ftip" hidden></div>
@@ -177,6 +183,7 @@
         <select id="marketSel" aria-label="Market"></select>
         <button type="button" id="fpWoreda">Select its woreda</button>
         <button type="button" id="fpGauge">Show its gauge</button>
+        <button type="button" class="png" data-png="food" title="Download this chart as PNG">PNG</button>
       </div>
     </div>
     <div class="scatterCtl fpCtl">
@@ -201,7 +208,7 @@
       <div id="lagHeat"></div>
       <div id="lagFlood"></div>
     </div>
-    <div class="legendRow fleg"><span><i class="box bAllKey"></i>All markets (pooled, each market's own mean removed)</span><span><i class="box bOneKey"></i>Selected market</span><span class="m">Faded bars: within chance (|ρ| &lt; 1.96/√n)</span></div>
+    <div class="legendRow fleg"><span><i class="box bAllKey"></i>All markets (pooled, each market's own mean removed)</span><span><i class="box bOneKey"></i>Selected market</span><span class="m">Faded bars: within chance (|ρ| &lt; 1.96/√n)</span><button type="button" class="png" data-png="lags" title="Download this pair of lag charts as PNG">PNG</button></div>
     <p class="desc" id="lagNote"></p>
     <p class="desc" id="foodSrc"></p>
   </section>
@@ -229,9 +236,9 @@
   <script src="config.js"></script>
   <script src="data/geo.js?v=3"></script>
   <script src="data/rivers.js?v=202611041614"></script>
-  <script src="data/food.js?v=202611041711"></script>
-  <script src="data/flood.js?v=202611041711"></script>
-  <script src="data/data.js?v=202611041708"></script>
-  <script src="app.js?v=16"></script>
+  <script src="data/food.js?v=202611060736"></script>
+  <script src="data/flood.js?v=202611060736"></script>
+  <script src="data/data.js?v=202611060734"></script>
+  <script src="app.js?v=19"></script>
 </body>
 </html>
