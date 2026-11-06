@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Ethiopia Woredas: Heat, Flooding, and Food Prices (June 2023 →)</title>
   <link href="https://api.mapbox.com/mapbox-gl-js/v3.7.0/mapbox-gl.css" rel="stylesheet">
-  <link href="style.css?v=11" rel="stylesheet">
+  <link href="style.css?v=12" rel="stylesheet">
 </head>
 <body>
   <header>
@@ -70,6 +70,17 @@
           <input id="daySlider" type="range" min="0" step="1" aria-label="Day">
         </div>
       </section>
+      <section id="dekCtl" hidden>
+        <div class="row">
+          <span class="lbl">Dekad</span>
+          <span id="dekLabel" class="month"></span>
+          <span id="dekBadge" class="badge" hidden>El Niño</span>
+        </div>
+        <div class="row">
+          <button id="dekPlay" type="button" aria-label="Play">▶</button>
+          <input id="dekSlider" type="range" min="0" step="1" aria-label="Dekad">
+        </div>
+      </section>
       <p id="staticNote" class="desc" hidden></p>
 
       <section id="gaugeCtl">
@@ -77,7 +88,7 @@
         <label class="check"><input type="checkbox" id="showGauges" checked> Show the 14 GloFAS gauges</label>
         <label class="check" id="riverRow"><input type="checkbox" id="showRivers" checked> Show the rivers linking them</label>
         <div id="gaugeLegend"></div>
-        <p class="desc">Discharge relative to the 2-year flood (RP2) at each gauge. Click a gauge for its series below; its catchment (light orange) and downstream path (orange-red) light up. Arrows show flow direction; white dots mark where gauged rivers meet.</p>
+        <p class="desc">Discharge relative to the 2-year flood (RP2) at each gauge. Click a gauge for its series below; its upstream rivers (light orange), downstream path (orange-red) and catchment outline (dashed, used for its rainfall) light up. Arrows show flow direction; white dots mark where gauged rivers meet.</p>
       </section>
 
       <section id="marketCtl">
@@ -158,6 +169,8 @@
       <span><i class="box" style="background:var(--normal);border-color:var(--muted)"></i>Normal 10–90% (1991–2020)</span>
       <span id="cmpKey" hidden><i style="background:var(--cmp)"></i><span></span></span>
       <span><i style="background:var(--trigger)"></i>OCHA OND trigger</span>
+      <span id="rainKey"><i class="box" style="background:var(--rain);border-color:var(--rain)"></i>Catchment rainfall per dekad (CHIRPS v3)</span>
+      <span id="rainNorm"><i style="background:var(--ink-2);height:0;border-top:2px dashed var(--ink-2)"></i>Rainfall normal (1991–2020 mean)</span>
       <span><i class="box"></i>El Niño</span>
     </div>
     <div id="fchart"></div>
@@ -220,6 +233,8 @@
       <dd>CrisisReady HeatReady API: ERA5-Land reanalysis (Copernicus C3S) from June 2023, Open-Meteo for the latest days and the 6-day forecast. Daily max/min temperature, WBGT, UTCI and heat index per woreda; anomalies against the API's 2016–2025 climatology.</dd>
       <dt>Flooding</dt>
       <dd>River discharge from GloFAS v4 (Copernicus Emergency Management Service) via the Open-Meteo Flood API, 1984 to a 30-day ensemble forecast, at the 14 gauges and OND trigger levels of OCHA's Ethiopia flood anticipatory-action project (Centre for Humanitarian Data, ds-aa-eth-flooding). RP2/RP5 levels are fitted here to 1984–2025 annual peaks. River network: HydroRIVERS v1.0 (HydroSHEDS; Lehner &amp; Grill 2013, CC-BY 4.0).</dd>
+      <dt>Rainfall</dt>
+      <dd>CHIRPS v3.0 dekadal rainfall (Climate Hazards Center, UC Santa Barbara; 0.05°, satellite infrared blended with station data), final product from June 2023. Woreda and catchment means; “normal” is the 1991–2020 average for the same dekad. Gauge catchments from HydroBASINS v1c level 12 (HydroSHEDS).</dd>
       <dt>Food prices</dt>
       <dd>World Bank Real-Time Food Prices (RTFP), market level, release 2026-10-05 (microdata catalog 4483): 129 markets, monthly; months without a survey are World Bank estimates.</dd>
       <dt>Population &amp; age</dt>
@@ -238,7 +253,8 @@
   <script src="data/rivers.js?v=202611041614"></script>
   <script src="data/food.js?v=202611060736"></script>
   <script src="data/flood.js?v=202611060736"></script>
+  <script src="data/rain.js?v=202611061211"></script>
   <script src="data/data.js?v=202611060734"></script>
-  <script src="app.js?v=19"></script>
+  <script src="app.js?v=21"></script>
 </body>
 </html>

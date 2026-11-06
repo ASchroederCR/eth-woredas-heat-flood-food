@@ -11,6 +11,9 @@
     Age: ['#e4e0fa', '#c6bef3', '#a297ea', '#7f6fe0', '#6250d6', '#4a3aa7', '#2f2470'],
   };
   CLASSIC.Forecast = CLASSIC.Daily = CLASSIC.Heat;
+  CLASSIC.Rainfall = ['#e0f3ef', '#b3e2d6', '#7fcdbb', '#41b6c4', '#1d91c0', '#225ea8', '#0c2c84'];
+  // rainfall vs normal: brown (drier) through a neutral middle (80-120%) to green (wetter)
+  const BRBG = ['#8c510a', '#d8b365', '#f6e8c3', '#f0efec', '#c7eae5', '#5ab4ac', '#01665e'];
   // Anomalies keep a diverging ramp in both schemes: the sign (above/below normal) is the point.
   const DIVERGING = ['#1c5cab', '#6da7ec', '#b7d3f6', '#f0efec', '#f4b8b7', '#e66767', '#b22b2b'];
   // Bivariate 3×3 (J. Stevens): BIV[populationClass][heatClass]; heat runs to red, population to blue, both to dark.
@@ -35,9 +38,39 @@
     M['dy_' + k] = { ...s, group: 'Daily', daily: true, temporal: false,
       desc: `${s.label} each day, ${dayName(days[0])} – ${dayName(days[days.length - 1])}; days from ${FC_SPAN.split(' – ')[0]} are the Open-Meteo forecast` };
   }
+  // CHIRPS v3 rainfall: per dekad (dk_*, dekadal: true, own slider) and monthly totals on the month slider
+  const RN = window.RAIN || null;
+  const dekads = RN ? RN.dekads : [];
+  const DEK_MON = new Intl.DateTimeFormat('en', { month: 'short', timeZone: 'UTC' });
+  function dekName(k, long = false) {
+    const [y, m, d] = k.split('.').map(Number);
+    const end = d < 3 ? d * 10 : new Date(Date.UTC(y, m, 0)).getUTCDate();
+    return `${(d - 1) * 10 + 1}–${end} ${DEK_MON.format(new Date(Date.UTC(y, m - 1, 1)))}${long ? ' ' + y : ''}`;
+  }
+  const dekMonth = (k) => k.slice(0, 7).replace('.', '-');
+  const dekIdx = new Map(dekads.map((k, j) => [k, j]));
+  const dekOfDay = (d) => dekIdx.get(`${d.slice(0, 4)}.${d.slice(5, 7)}.${+d.slice(8, 10) <= 10 ? 1 : +d.slice(8, 10) <= 20 ? 2 : 3}`);
+  const monthIdx = new Map(months.map((m, t) => [m, t]));
+  const RAIN_KEYS = [];
+  if (RN && dekads.length) {
+    const span = `${dekName(dekads[0], true)} – ${dekName(dekads[dekads.length - 1], true)}`;
+    const pctDesc = `Rainfall as a share of the ${RN.clim.replace('-', '–')} average for the same dekads (CHIRPS v3). Brown is drier than normal, green wetter; the middle class (80–120%) is near normal.`;
+    const add = {
+      dk_mm: { label: 'Rainfall per dekad', unit: 'mm', dekadal: true, values: RN.woreda.mm, breaks: [1, 10, 25, 50, 100, 150],
+        desc: `CHIRPS v3 rainfall total for each 10-day period (dekad), ${span}; area mean over the woreda.` },
+      dk_pct: { label: 'Dekad rainfall vs normal', unit: '%', dekadal: true, values: RN.woreda.pct, breaks: [25, 50, 80, 120, 150, 200], ramp: BRBG, ref: 100,
+        desc: pctDesc + ' Blank where the dekad is normally dry (under 2 mm).' },
+      rain_mm: { label: 'Monthly rainfall', unit: 'mm', temporal: true, values: RN.monthly.mm, breaks: [5, 25, 50, 100, 200, 300],
+        desc: 'CHIRPS v3 rainfall total for the month (its three dekads); area mean over the woreda. Blank for months not yet complete.' },
+      rain_pct: { label: 'Monthly rainfall vs normal', unit: '%', temporal: true, values: RN.monthly.pct, breaks: [25, 50, 80, 120, 150, 200], ramp: BRBG, ref: 100,
+        desc: pctDesc + ' Blank where the month is normally dry (under 5 mm).' },
+    };
+    for (const [k, v] of Object.entries(add)) { M[k] = { ...v, group: 'Rainfall' }; RAIN_KEYS.push(k); }
+  }
   const GROUP_LABEL = {
     Forecast: `Forecast · ${FC_SPAN}`,
     Daily: 'Daily · last 3 weeks + forecast',
+    Rainfall: 'Rainfall · CHIRPS v3',
   };
   const keys = Object.keys(M);
   const isFcSummary = (k) => M[k].group === 'Forecast';
@@ -61,6 +94,7 @@
     xLog: true,
     t: months.length - 1,
     d: hasFc ? DY.fc_start : Math.max(0, days.length - 1),
+    k: Math.max(0, dekads.length - 1),   // dekad index for the rainfall dekad layers
     sel: [],
     hover: null,
     playing: null,
@@ -74,6 +108,7 @@
     if (u === 'people' || u === 'person-days') return Math.round(v).toLocaleString('en');
     if (u === 'days') return (Math.round(v * 10) / 10).toLocaleString('en');
     if (u === '') return v.toFixed(2);
+    if (u === '%') return Math.round(v) + '';
     const s = (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(1));
     return (M[key].diverging && v > 0 ? '+' : '') + s;
   }
@@ -82,6 +117,7 @@
     const s = fmt(v, key);
     if (s === '—' || !u) return s;
     if (u === 'days' && s === '1') return '1 day';
+    if (u === '%') return s + '%';
     return s + ' ' + u;
   };
   function compact(v) {
@@ -95,12 +131,14 @@
     const s = M[key];
     if (s.temporal) return s.values[t ?? state.t][i];
     if (s.daily) return s.values[t ?? state.d][i];
+    if (s.dekadal) return s.values[t ?? state.k][i];
     return s.values[i];
   }
   function periodOf(key) {
     const s = M[key];
     if (s.temporal) return monthName(months[state.t]);
     if (s.daily) return dayName(days[state.d]) + (isFcDay(state.d) ? ' (forecast)' : '');
+    if (s.dekadal) return dekName(dekads[state.k], true);
     if (isFcSummary(key)) return `forecast ${FC_SPAN}`;
     return '';
   }
@@ -133,13 +171,17 @@
     if (sum) return plain;
     return w ? s / w : plain / cnt;
   }
+  {
+    const all = [...Array(n).keys()];
+    for (const k of RAIN_KEYS) M[k].national = M[k].values.map((_, t) => aggregate(k, all, t));
+  }
 
   // ---------- class breaks (fixed across all months so time steps compare) ----------
   const sortedCache = {};
   function sortedValues(key) {
     if (!sortedCache[key]) {
       const spec = M[key];
-      sortedCache[key] = (spec.temporal || spec.daily ? spec.values.flat() : spec.values).filter((v) => v !== null).sort((a, b) => a - b);
+      sortedCache[key] = (spec.temporal || spec.daily || spec.dekadal ? spec.values.flat() : spec.values).filter((v) => v !== null).sort((a, b) => a - b);
     }
     return sortedCache[key];
   }
@@ -147,6 +189,7 @@
   const breaksCache = {};
   function breaks(key) {
     if (breaksCache[key]) return breaksCache[key];
+    if (M[key].breaks) return (breaksCache[key] = M[key].breaks);
     const spec = M[key], all = sortedValues(key);
     let b;
     if (spec.diverging) {
@@ -203,7 +246,7 @@
     return [`< ${f(a)}`, `${f(a)}–${f(b)}`, `≥ ${f(b)}`];
   }
 
-  const rampFor = (key) => (M[key].diverging ? DIVERGING : state.scheme === 'viridis' ? VIRIDIS : CLASSIC[M[key].group]);
+  const rampFor = (key) => M[key].ramp || (M[key].diverging ? DIVERGING : state.scheme === 'viridis' ? VIRIDIS : CLASSIC[M[key].group]);
   const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   function colorExpr(key) {
     const b = breaks(key), ramp = rampFor(key).slice(-(b.length + 1));
@@ -261,7 +304,12 @@
   slider.max = months.length - 1;
   slider.value = state.t;
   slider.addEventListener('input', () => setMonth(+slider.value));
-  $('playBtn').addEventListener('click', togglePlay);
+  $('playBtn').addEventListener('click', () => togglePlay('month'));
+  const dekSlider = $('dekSlider');
+  dekSlider.max = Math.max(0, dekads.length - 1);
+  dekSlider.value = state.k;
+  dekSlider.addEventListener('input', () => setDekad(+dekSlider.value));
+  $('dekPlay').addEventListener('click', () => togglePlay('dek'));
   const daySlider = $('daySlider');
   daySlider.max = Math.max(0, days.length - 1);
   daySlider.value = state.d;
@@ -270,7 +318,8 @@
   $('coverage').textContent =
     `${n.toLocaleString('en')} woredas · monthly, ${monthName(months[0])} – ${monthName(months[months.length - 1])}` +
     ` · daily data ${D.first_date} to ${D.last_date}` +
-    (hasFc ? ` · forecast to ${dayName(days[days.length - 1])}` : '');
+    (hasFc ? ` · forecast to ${dayName(days[days.length - 1])}` : '') +
+    (dekads.length ? ` · rainfall by dekad to ${dekName(dekads[dekads.length - 1], true)}` : '');
 
   // woreda search (names repeat across zones, so the option text carries zone and region)
   const findText = D.woredas.map((w) => `${w.name} — ${w.zone}, ${w.region}`);
@@ -284,31 +333,37 @@
     e.target.value = '';
   });
 
-  function togglePlay() {
-    const btn = $('playBtn');
+  const AXES = {
+    month: { btn: 'playBtn', len: () => months.length, get: () => state.t, set: (v) => setMonth(v), ms: 700 },
+    dek: { btn: 'dekPlay', len: () => dekads.length, get: () => state.k, set: (v) => setDekad(v), ms: 450 },
+  };
+  function togglePlay(ax) {
     if (state.playing) {
-      clearInterval(state.playing); state.playing = null; btn.textContent = '▶'; btn.ariaLabel = 'Play';
+      clearInterval(state.playing); state.playing = null;
+      for (const a of Object.values(AXES)) { $(a.btn).textContent = '▶'; $(a.btn).ariaLabel = 'Play'; }
       return;
     }
-    if (state.t >= months.length - 1) setMonth(0);
-    btn.textContent = '❚❚'; btn.ariaLabel = 'Pause';
+    const A = AXES[ax];
+    if (A.get() >= A.len() - 1) A.set(0);
+    $(A.btn).textContent = '❚❚'; $(A.btn).ariaLabel = 'Pause';
     state.playing = setInterval(() => {
-      if (state.t >= months.length - 1) return togglePlay();
-      setMonth(state.t + 1);
-    }, 700);
+      if (A.get() >= A.len() - 1) return togglePlay(ax);
+      A.set(A.get() + 1);
+    }, A.ms);
   }
 
   // The key the map is coloured by (its heat axis in bivariate mode), and the series the chart shows.
   const mapKey = () => (state.mode === 'bi' ? state.y : state.metric);
-  const seriesFor = (k) => (M[k].temporal || M[k].daily ? k : M[FC_BASE[k]] ? FC_BASE[k] : null);
+  const seriesFor = (k) => (M[k].temporal || M[k].daily || M[k].dekadal ? k : M[FC_BASE[k]] ? FC_BASE[k] : null);
   const chartKey = () => seriesFor(mapKey()) || state.lastTemporal;
   function syncTimeCtl() {
     const s = M[mapKey()];
     $('dayCtl').hidden = !s.daily;
-    $('timeCtl').hidden = !!s.daily;
+    $('dekCtl').hidden = !s.dekadal;
+    $('timeCtl').hidden = !!(s.daily || s.dekadal);
     $('timeCtl').style.opacity = s.temporal ? 1 : 0.45;
     const note = $('staticNote');
-    note.hidden = s.temporal || s.daily;
+    note.hidden = s.temporal || s.daily || s.dekadal;
     note.textContent = isFcSummary(mapKey())
       ? `Summary of the Open-Meteo forecast for ${FC_SPAN} (issued ${DY.issued ? DY.issued.slice(0, 10) : '—'}). The chart below shows the daily values behind it.`
       : "This layer doesn't change over time. The chart below shows the heat metric you last picked.";
@@ -349,6 +404,17 @@
     renderBiv(); renderDetail(); renderChart(); renderScatter();
     if (fl) { paintGauges(); renderFlood(); }
     if (fp) { paintMarkets(); renderFood(); }
+  }
+  function setDekad(k) {
+    if (!dekads.length) return;
+    state.k = k;
+    dekSlider.value = k;
+    $('dekLabel').textContent = dekName(dekads[k], true);
+    const t = monthIdx.get(dekMonth(dekads[k]));
+    $('dekBadge').hidden = !(t !== undefined && D.enso.elnino[t]);
+    if (M[mapKey()].dekadal) paint();
+    renderDetail(); renderChart();
+    if (fl) { paintGauges(); renderFlood(); }
   }
   function setDay(d) {
     if (!days.length) return;
@@ -574,7 +640,7 @@
     html += '<table>';
     let grp = null;
     for (const [k, spec] of Object.entries(M)) {
-      const g = spec.temporal || spec.daily ? `${spec.group} · ${periodOf(k)}` : GROUP_LABEL[spec.group] || spec.group;
+      const g = spec.temporal || spec.daily || spec.dekadal ? `${spec.group} · ${periodOf(k)}` : GROUP_LABEL[spec.group] || spec.group;
       if (g !== grp) { html += `<tr class="grp"><td colspan="2">${g}</td></tr>`; grp = g; }
       const v = S.length === 1 ? valueAt(k, S[0]) : aggregate(k, S);
       html += `<tr><td>${spec.label}</td><td>${withUnit(v, k)}</td></tr>`;
@@ -600,13 +666,17 @@
   function renderChart() {
     const key = chartKey();
     const spec = M[key];
-    const daily = !!spec.daily;
-    const N = daily ? days.length : months.length, cur = daily ? state.d : state.t;
+    const daily = !!spec.daily, dek = !!spec.dekadal;
+    const N = daily ? days.length : dek ? dekads.length : months.length, cur = daily ? state.d : dek ? state.k : state.t;
+    // El Niño flag for each step (dekads take their month's)
+    const monOf = (t) => (dek ? monthIdx.get(dekMonth(dekads[t])) : t);
+    const ensoAt = (t) => { const m = monOf(t); return m !== undefined && !!D.enso.elnino[m]; };
+    const provAt = (t) => { const m = monOf(t); return m !== undefined && !!D.enso.provisional[m]; };
     const nat = spec.national;
     const S = state.sel;
     const wor = !S.length ? null : Array.from({ length: N }, (_, t) => (S.length === 1 ? valueAt(key, S[0], t) : aggregate(key, S, t)));
     const natLabel = spec.group === 'Exposure' ? 'Ethiopia total' : 'Ethiopia (population-weighted)';
-    $('chartTitle').textContent = `${spec.label}${spec.unit ? ` (${spec.unit})` : ''} ${daily ? 'by day' : 'by month'}`;
+    $('chartTitle').textContent = `${spec.label}${spec.unit ? ` (${spec.unit})` : ''} ${daily ? 'by day' : dek ? 'by dekad' : 'by month'}`;
     $('chartLegend').innerHTML =
       (wor ? `<span><i style="background:var(--accent)"></i>${esc(selLabel())}</span>` : '') +
       `<span><i style="background:var(--national)"></i>${natLabel}</span>` +
@@ -617,9 +687,9 @@
     if (W < 120 || H < 80) return;
     const pad = { l: 48, r: 12, t: 18, b: 24 };
     const th = daily ? THRESH[key] : null;
-    const vals = [...nat, ...(wor || []), ...(th ? [th[0]] : [])].filter((v) => v !== null);
+    const vals = [...nat, ...(wor || []), ...(th ? [th[0]] : []), ...(spec.ref ? [spec.ref] : [])].filter((v) => v !== null);
     let lo = Math.min(...vals), hi = Math.max(...vals);
-    if (spec.unit === 'days' || spec.group === 'Exposure') lo = 0;
+    if (spec.unit === 'days' || spec.group === 'Exposure' || spec.group === 'Rainfall') lo = 0;
     if (spec.diverging) { const a = Math.max(Math.abs(lo), Math.abs(hi)); lo = -a; hi = a; }
     if (hi - lo < 1) { const mid = (hi + lo) / 2; lo = mid - 0.5; hi = mid + 0.5; }
     const ticks = niceTicks(lo, hi, 4);
@@ -628,7 +698,7 @@
     const y = (v) => pad.t + (H - pad.t - pad.b) * (1 - (v - lo) / (hi - lo));
     const bw = (W - pad.l - pad.r) / N;
 
-    let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(spec.label)} ${daily ? 'daily' : 'monthly'} time series">`;
+    let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(spec.label)} ${daily ? 'daily' : dek ? 'dekadal' : 'monthly'} time series">`;
     const band = (t0, t1, fill, cls, label) =>
       `<rect x="${x(t0) - bw / 2}" y="${pad.t}" width="${bw * (t1 - t0)}" height="${H - pad.t - pad.b}" fill="${fill}"/>` +
       `<text class="${cls}" x="${x(t0) - bw / 2 + 4}" y="${pad.t - 5}">${label}</text>`;
@@ -637,10 +707,10 @@
     } else {
       let t0 = null;
       for (let t = 0; t <= N; t++) {
-        const on = t < N && D.enso.elnino[t];
+        const on = t < N && ensoAt(t);
         if (on && t0 === null) t0 = t;
         if (!on && t0 !== null) {
-          const prov = D.enso.provisional[t0] && D.enso.provisional[t - 1];
+          const prov = provAt(t0) && provAt(t - 1);
           s += band(t0, t, 'var(--enso)', 'ensoLbl', `El Niño${prov ? ' (provisional)' : ''}`);
           t0 = null;
         }
@@ -655,11 +725,15 @@
       s += `<line x1="${pad.l}" x2="${W - pad.r}" y1="${y(th[0])}" y2="${y(th[0])}" stroke="var(--ink-2)" stroke-dasharray="6 4"/>`;
       s += `<text x="${pad.l + 4}" y="${y(th[0]) - 4}">${th[1]}</text>`;
     }
+    if (spec.ref) {
+      s += `<line x1="${pad.l}" x2="${W - pad.r}" y1="${y(spec.ref)}" y2="${y(spec.ref)}" stroke="var(--ink-2)" stroke-dasharray="6 4"/>`;
+      s += `<text x="${pad.l + 4}" y="${y(spec.ref) - 4}">normal (${RN.clim.replace('-', '–')} average)</text>`;
+    }
     for (let t = 0; t < N; t++) {
-      const tick = daily ? (N - 1 - t) % 7 === 0 : months[t].endsWith('-01') || t === 0;
+      const tick = daily ? (N - 1 - t) % 7 === 0 : dek ? dekads[t].endsWith('.01.1') || t === 0 : months[t].endsWith('-01') || t === 0;
       if (!tick) continue;
       s += `<line x1="${x(t)}" x2="${x(t)}" y1="${H - pad.b}" y2="${H - pad.b + 4}" stroke="var(--axis)"/>`;
-      s += `<text x="${x(t)}" y="${H - 6}" text-anchor="middle">${daily ? dayName(days[t]) : monthName(months[t])}</text>`;
+      s += `<text x="${x(t)}" y="${H - 6}" text-anchor="middle">${daily ? dayName(days[t]) : dek ? monthName(dekMonth(dekads[t])) : monthName(months[t])}</text>`;
     }
     s += `<line x1="${pad.l}" x2="${W - pad.r}" y1="${H - pad.b}" y2="${H - pad.b}" stroke="var(--axis)"/>`;
     s += `<line x1="${x(cur)}" x2="${x(cur)}" y1="${pad.t}" y2="${H - pad.b}" stroke="var(--muted)" stroke-dasharray="3 3"/>`;
@@ -700,6 +774,8 @@
       let head;
       if (daily) {
         head = `<b>${dayName(days[t], true)}</b>${isFcDay(t) ? ' · <b>Forecast</b>' : ''}`;
+      } else if (dek) {
+        head = `<b>${dekName(dekads[t], true)}</b>${ensoAt(t) ? ' · <b>El Niño</b>' : ''}`;
       } else {
         const prov = D.provisional_share[t] > 0.5 ? '<br><span class="m">Mostly Open-Meteo (provisional)</span>' : '';
         head = `<b>${monthName(months[t])}</b>${D.enso.elnino[t] ? ' · <b>El Niño</b>' : ''}` +
@@ -714,7 +790,7 @@
       chartTip.style.top = chartEl.offsetTop + 8 + 'px';
     });
     hit.addEventListener('mouseleave', () => { hov.innerHTML = ''; chartTip.hidden = true; });
-    hit.addEventListener('click', (ev) => (daily ? setDay(tAt(ev)) : setMonth(tAt(ev))));
+    hit.addEventListener('click', (ev) => (daily ? setDay(tAt(ev)) : dek ? setDekad(tAt(ev)) : setMonth(tAt(ev))));
   }
   function niceTicks(lo, hi, count) {
     const span = hi - lo, step0 = span / count, mag = Math.pow(10, Math.floor(Math.log10(step0)));
@@ -887,6 +963,11 @@
       const k = fl.dayIdx.get(days[state.d]);
       if (k !== undefined) return { kind: 'day', k, label: dayName(days[state.d], true) + (k >= fl.fc0 ? ' (forecast median)' : '') };
     }
+    // rainfall dekad layers: the peak of the dekad's month
+    if (M[mapKey()].dekadal && dekads.length) {
+      const t = monthIdx.get(dekMonth(dekads[state.k]));
+      if (t !== undefined) return { kind: 'month', t, label: `${monthName(months[t])} peak` };
+    }
     return { kind: 'month', t: state.t, label: `${monthName(months[state.t])} peak` };
   }
   const flValue = (gi, p) => (p.kind === 'day' ? F.q[gi][p.k] : F.monthly.peak[gi][p.t]);
@@ -899,6 +980,11 @@
     });
     const cls = ['coalesce', ['feature-state', 'c'], -1], on = ['boolean', ['feature-state', 'on'], false];
     const vis = $('showGauges').checked ? 'visible' : 'none';
+    if (RN && RN.catchments) {
+      map.addSource('catch', { type: 'geojson', data: catchData() });
+      map.addLayer({ id: 'catch-line', type: 'line', source: 'catch', layout: { visibility: vis },
+        paint: { 'line-color': isDark() ? '#f0efec' : '#0b0b0b', 'line-width': 1.3, 'line-dasharray': [3, 2], 'line-opacity': 0.75 } });
+    }
     // selected gauge: a dark halo behind a white ring, so it reads on every viridis step
     map.addLayer({
       id: 'g-sel', type: 'circle', source: 'g', layout: { visibility: vis },
@@ -925,8 +1011,13 @@
     $('gaugeLegend').innerHTML = `<div class="gPeriod">${esc(p.label)}</div>` + FL_CLS.map((c, i) =>
       `<div class="gRow"><i style="background:${c.c};width:${c.r * 2}px;height:${c.r * 2}px"></i>${c.label}<span>${counts[i]}</span></div>`).join('');
   }
+  function catchData() {
+    const g = RN && RN.catchments && RN.catchments[fl.gi];
+    return { type: 'FeatureCollection', features: g ? [{ type: 'Feature', properties: {}, geometry: g }] : [] };
+  }
   function setGauge(k, fly = false) {
     fl.gi = k;
+    if (map.getSource('catch')) map.getSource('catch').setData(catchData());
     if (RV) { paintRivers(); fillCompare(); }
     $('gaugeSel').value = String(k);
     paintGauges(); renderFlood();
@@ -951,7 +1042,11 @@
     $('cmpKey').hidden = cmpK === null;
     if (cmpK !== null) $('cmpKey').lastChild.textContent = fl.st[cmpK].label;
     const [a, b] = flWindow(), N = b - a + 1;
-    const W = fchart.clientWidth, H = fchart.clientHeight;
+    const R = RN && RN.gauges[gi];
+    $('rainKey').hidden = $('rainNorm').hidden = !R;
+    // the bottom RH pixels hold the catchment rainfall panel, on the same time axis
+    const RH = R ? 112 : 0;
+    const W = fchart.clientWidth, HT = fchart.clientHeight, H = HT - RH;
     if (W < 160 || H < 100) { renderFloodStats(); renderStrip(); return; }
     const pad = { l: 56, r: 74, t: 18, b: 24 };
     const fcB = (k, j) => (k >= fl.fc0 ? B[j][k - fl.fc0] : null);
@@ -965,7 +1060,7 @@
     const y = (v) => pad.t + (H - pad.t - pad.b) * (1 - v / hi);
     const bw = (W - pad.l - pad.r) / N;
     const mIdx = (k) => fl.monIdx.get(fl.days[k].slice(0, 7));
-    let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Daily river discharge at ${esc(s.label)}">`;
+    let svg = `<svg viewBox="0 0 ${W} ${HT}" role="img" aria-label="Daily river discharge at ${esc(s.label)}${R ? ' and dekadal catchment rainfall' : ''}">`;
     // El Niño months
     let k0 = null;
     for (let k = a; k <= b + 1; k++) {
@@ -1043,7 +1138,37 @@
     }
     if (Qc) svg += `<path d="${path((k) => Qc[k], a, b)}" fill="none" stroke="var(--cmp)" stroke-width="1.5" stroke-linejoin="round"/>`;
     svg += `<path d="${path((k) => Q[k], a, Math.min(b, fl.fc0 - 1))}" fill="none" stroke="var(--accent)" stroke-width="${N > 600 ? 1.5 : 2}" stroke-linejoin="round"/>`;
-    svg += `<g id="fhov"></g><rect x="${pad.l}" y="0" width="${W - pad.l - pad.r}" height="${H}" fill="transparent" id="fhit" style="cursor:pointer"/></svg>`;
+    // catchment rainfall per dekad (CHIRPS), each bar spanning its dekad's days
+    let ry = null;
+    if (R) {
+      const top = H + 26, bot = HT - 4, ph = bot - top;
+      const runs = [];
+      for (let k = a, run = null; k <= b; k++) {
+        const j = dekOfDay(fl.days[k]);
+        if (j === undefined) { run = null; continue; }
+        if (run && run.j === j) run.k1 = k; else { run = { j, k0: k, k1: k }; runs.push(run); }
+      }
+      const mx = runs.reduce((m, r) => Math.max(m, R.mm[r.j] || 0, R.normal[r.j] || 0), 0);
+      const rt = niceTicks(0, Math.max(mx, 10), 2), rhi = rt[rt.length - 1];
+      ry = (v) => bot - (ph * v) / rhi;
+      for (const v of rt) {
+        svg += `<line x1="${pad.l}" x2="${W - pad.r}" y1="${ry(v)}" y2="${ry(v)}" stroke="var(--grid)"/>` +
+          `<text x="${pad.l - 6}" y="${ry(v) + 4}" text-anchor="end">${compact(v)}</text>`;
+      }
+      svg += `<text x="${pad.l - 6}" y="${top - 8}" text-anchor="end">mm</text>` +
+        `<text class="rainLbl" x="${pad.l}" y="${top - 8}">Catchment rainfall per dekad · CHIRPS v3 · ${R.area_km2.toLocaleString('en')} km² upstream</text>`;
+      let nd = '';
+      for (const r of runs) {
+        const v = R.mm[r.j], x0 = x(r.k0) - bw / 2, w = Math.max(1, (r.k1 - r.k0 + 1) * bw - 1.5);
+        if (v !== null) svg += `<rect x="${x0 + 0.75}" y="${ry(v)}" width="${w}" height="${Math.max(0, bot - ry(v))}" fill="var(--rain)" rx="1"/>`;
+        if (R.normal[r.j] !== null) nd += `M${x0},${ry(R.normal[r.j])}h${(r.k1 - r.k0 + 1) * bw}`;
+      }
+      svg += `<path d="${nd}" fill="none" stroke="var(--ink-2)" stroke-width="1.5" stroke-dasharray="3 2"/>`;
+      svg += `<line x1="${pad.l}" x2="${W - pad.r}" y1="${bot}" y2="${bot}" stroke="var(--axis)"/>`;
+      const lastK = runs.length ? runs[runs.length - 1].k1 : a;
+      if (lastK < b) svg += `<text x="${x(lastK) + bw + 4}" y="${bot - 4}">CHIRPS to ${dekName(dekads[dekads.length - 1])}</text>`;
+    }
+    svg += `<g id="fhov"></g><rect x="${pad.l}" y="0" width="${W - pad.l - pad.r}" height="${HT}" fill="transparent" id="fhit" style="cursor:pointer"/></svg>`;
     fchart.innerHTML = svg;
 
     const hit = fchart.querySelector('#fhit'), hov = fchart.querySelector('#fhov');
@@ -1052,13 +1177,16 @@
       const k = kAt(ev), v = Q[k], fc = k >= fl.fc0;
       hov.innerHTML = `<line x1="${x(k)}" x2="${x(k)}" y1="${pad.t}" y2="${H - pad.b}" stroke="var(--axis)"/>` +
         (v === null ? '' : `<circle cx="${x(k)}" cy="${y(v)}" r="4" fill="var(--accent)" stroke="var(--surface)" stroke-width="2"/>`);
-      const t = mIdx(k), nm = C[1][k];
+      const t = mIdx(k), nm = C[1][k], j = R ? dekOfDay(fl.days[k]) : undefined;
+      if (j !== undefined && R.mm[j] !== null) hov.innerHTML += `<line x1="${x(k)}" x2="${x(k)}" y1="${ry(R.mm[j])}" y2="${HT - 4}" stroke="var(--axis)"/>`;
       ftip.innerHTML = `<b>${dayName(fl.days[k], true)}</b>${fc ? ' · <b>Forecast</b>' : ''}${t !== undefined && D.enso.elnino[t] ? ' · <b>El Niño</b>' : ''}` +
         `<br>${fc ? 'Ensemble median' : 'Discharge'}: <b>${fmtQ(v)}</b>` +
         (fc && B[0][k - fl.fc0] !== null ? `<br><span class="m">Middle half ${fmtQ(B[0][k - fl.fc0])} – ${fmtQ(B[1][k - fl.fc0])}; max ${fmtQ(B[3][k - fl.fc0])}</span>` : '') +
         (Qc ? `<br>${esc(fl.st[cmpK].label)}: <b>${fmtQ(Qc[k])}</b>` : '') +
         (nm ? `<br>Normal (1991–2020 median): ${fmtQ(nm)} <span class="m">· ${v === null ? '—' : Math.round((100 * v) / nm) + '%'}</span>` : '') +
-        `<br>${v === null ? '' : `${(v / s.rp[2]).toFixed(2)} × RP2`}${s.trigger && inOND(fl.days[k]) && v !== null ? ` <span class="m">· ${Math.round((100 * v) / s.trigger)}% of OND trigger</span>` : ''}`;
+        `<br>${v === null ? '' : `${(v / s.rp[2]).toFixed(2)} × RP2`}${s.trigger && inOND(fl.days[k]) && v !== null ? ` <span class="m">· ${Math.round((100 * v) / s.trigger)}% of OND trigger</span>` : ''}` +
+        (j !== undefined ? `<br>Catchment rain ${dekName(dekads[j])}: <b>${R.mm[j] === null ? '—' : R.mm[j] + ' mm'}</b>` +
+          (R.pct[j] !== null ? ` <span class="m">· ${R.pct[j]}% of normal</span>` : '') : '');
       ftip.hidden = false;
       const wrap = fchart.parentElement.getBoundingClientRect();
       ftip.style.left = Math.min(ev.clientX - wrap.left + 12, wrap.width - ftip.offsetWidth - 8) + 'px';
@@ -1067,7 +1195,10 @@
     hit.addEventListener('mouseleave', () => { hov.innerHTML = ''; ftip.hidden = true; });
     hit.addEventListener('click', (ev) => {
       const k = kAt(ev), t = mIdx(k), dd = days.indexOf(fl.days[k]);
-      if (M[mapKey()].daily && dd >= 0) setDay(dd); else if (t !== undefined) setMonth(t);
+      const j = dekOfDay(fl.days[k]);
+      if (M[mapKey()].daily && dd >= 0) setDay(dd);
+      else if (M[mapKey()].dekadal && j !== undefined) setDekad(j);
+      else if (t !== undefined) setMonth(t);
     });
     renderFloodStats();
     renderStrip();
@@ -1099,6 +1230,14 @@
       card('Share of days ≥ RP2', `${pct(enAbove, enDays)} <span class="vs">El Niño</span>`, `${pct(otAbove, otDays)} in other months`) +
       card('Flood levels (1984–2025)', `RP2 ${fmtQ(s.rp[2])}`,
         `RP5 ${fmtQ(s.rp[5])} · OND trigger ${fmtQ(s.trigger)} · record ${fmtQ(s.max_q)} (${s.max_year})`);
+    const R = RN && RN.gauges[fl.gi];
+    if (R && dekads.length >= 3) {
+      const js = [dekads.length - 3, dekads.length - 2, dekads.length - 1];
+      const tot = js.reduce((t, j) => (t === null || R.mm[j] === null ? null : t + R.mm[j]), 0);
+      const nrm = js.reduce((t, j) => (t === null || R.normal[j] === null ? null : t + R.normal[j]), 0);
+      $('floodStats').innerHTML += card('Catchment rainfall, last 3 dekads', tot === null ? '—' : `${Math.round(tot)} mm`,
+        `${dekName(dekads[js[0]])} – ${dekName(dekads[js[2]], true)}${tot !== null && nrm >= 5 ? ` · ${Math.round((100 * tot) / nrm)}% of normal` : ''}`);
+    }
     const cv = RV && $('gaugeCmp').value !== '' ? +$('gaugeCmp').value : null;
     if (cv !== null) {
       const rel = connected(fl.gi).find((o) => o.k === cv);
@@ -1175,7 +1314,7 @@
     }
     $('showNormal').addEventListener('change', (e) => { fl.normal = e.target.checked; renderFlood(); });
     $('showGauges').addEventListener('change', (e) => {
-      for (const id of ['g-sel', 'g-pt']) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', e.target.checked ? 'visible' : 'none');
+      for (const id of ['g-sel', 'g-pt', 'catch-line']) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', e.target.checked ? 'visible' : 'none');
     });
     $('selZone').addEventListener('click', () => setSelection(fl.st[fl.gi].zone_idx));
     $('zoomGauge').addEventListener('click', () => setGauge(fl.gi, true));
@@ -1665,6 +1804,8 @@
     flood: 'River flow: GloFAS v4 (Copernicus EMS) via Open-Meteo; gauges and OND trigger: OCHA',
     rivers: 'Rivers: HydroRIVERS v1.0',
     food: 'Food prices: World Bank RTFP',
+    rain: 'Rainfall: CHIRPS v3.0 (UCSB Climate Hazards Center)',
+    basins: 'Catchments: HydroBASINS v1c',
     base: 'Boundaries: OCHA COD-AB; basemap © Mapbox © OpenStreetMap',
   };
   const PNG_FONT = getComputedStyle(document.body).fontFamily || 'system-ui, sans-serif';
@@ -1816,11 +1957,11 @@
   const FL_LEGEND = () => FL_CLS.map((c) => ({ kind: 'circle', color: c.c, r: c.r, label: c.label }));
   const EXPORTS = {
     chart: () => ({ name: txt('chartTitle'), title: txt('chartTitle'), sub: state.sel.length ? selLabel() : 'Ethiopia',
-      legend: legendFromRow($('chartLegend')), svgs: svgsIn('chart'), sources: [SRC.heat, SRC.enso, SRC.pop] }),
+      legend: legendFromRow($('chartLegend')), svgs: svgsIn('chart'), sources: [M[chartKey()].group === 'Rainfall' ? SRC.rain : SRC.heat, SRC.enso, SRC.pop] }),
     scatter: () => ({ name: txt('scatterTitle'), title: txt('scatterTitle'), sub: `${M[state.y].label} vs ${M[state.x].label}${state.xLog ? ' (log x)' : ''} · ${txt('rho')}`,
       legend: [], svgs: svgsIn('scatter'), sources: [SRC.heat, SRC.pop] }),
     flood: () => ({ name: txt('floodTitle'), title: txt('floodTitle'), sub: [txt('floodWhere'), txt('floodLinks')].filter(Boolean).join(' · '),
-      legend: legendFromRow($('floodWrap').querySelector('.fleg')), svgs: svgsIn('fchart'), sources: [SRC.flood, SRC.enso, SRC.rivers] }),
+      legend: legendFromRow($('floodWrap').querySelector('.fleg')), svgs: svgsIn('fchart'), sources: [SRC.flood, ...(RN ? [SRC.rain, SRC.basins] : []), SRC.enso, SRC.rivers] }),
     strip: () => ({ name: 'all-gauges-monthly-peak', title: 'All flood gauges · monthly peak discharge relative to the 2-year flood (RP2)',
       sub: 'Bar above the months marks El Niño; dashed column is the month selected on the map', legend: FL_LEGEND(), svgs: svgsIn('fstrip'), sources: [SRC.flood, SRC.enso] }),
     food: () => ({ name: txt('foodTitle'), title: txt('foodTitle'), sub: txt('foodWhere'),
@@ -1849,6 +1990,7 @@
     if (fl && on('g-pt')) items.push({ kind: 'text', label: `Gauges (${flPeriod().label}):` }, ...FL_LEGEND());
     if (RV && on('rv-line')) items.push({ kind: 'line', color: isDark() ? '#5aa9f0' : '#1f5fa8', label: 'Rivers linking the gauges' },
       { kind: 'line', color: '#ff4f1f', label: `Downstream of ${fl.st[fl.gi].label}` });
+    if (on('catch-line') && RN.catchments[fl.gi]) items.push({ kind: 'dash', color: isDark() ? '#f0efec' : '#0b0b0b', label: `Catchment of ${fl.st[fl.gi].label}` });
     if (fp && on('m-pt')) {
       const ms = FP_MEAS[fp.meas];
       items.push({ kind: 'diamond', color: '#f0efec', label: 'Food markets:' },
@@ -1868,7 +2010,7 @@
       ? `${M[state.y].label} × ${M[state.x].label}${periodOf(state.y) ? ` · ${periodOf(state.y)}` : ''}`
       : `${M[key].label}${periodOf(key) ? ` · ${periodOf(key)}` : ''}`;
     const sub = `Ethiopia woredas${state.sel.length ? ` · selected: ${selLabel()}` : ''}`;
-    const srcs = [SRC.heat, SRC.pop, SRC.enso];
+    const srcs = [M[key].group === 'Rainfall' ? SRC.rain : SRC.heat, SRC.pop, SRC.enso];
     if (fl && map.getLayer('g-pt') && map.getLayoutProperty('g-pt', 'visibility') !== 'none') srcs.push(SRC.flood, SRC.rivers);
     if (fp && map.getLayer('m-pt') && map.getLayoutProperty('m-pt', 'visibility') !== 'none') srcs.push(SRC.food);
     srcs.push(SRC.base);
@@ -1906,7 +2048,7 @@
     try { localStorage.setItem('eth-heat-theme', document.documentElement.dataset.theme); } catch (e) { /* ignore */ }
     map.setStyle(styleUrl());
     renderLegend(); renderChart(); renderScatter();
-    if (fl) renderFlood();
+    if (fl) { paintGauges(); renderFlood(); }
     if (fp) renderFood();
   });
   try {
@@ -1920,6 +2062,7 @@
   sLog.checked = state.xLog = isCount(state.x);
   setMetric(state.metric);
   setDay(state.d);
+  setDekad(state.k);
   setMonth(state.t);
   renderDetail();
 })();

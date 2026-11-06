@@ -52,6 +52,15 @@ Then browse to http://localhost:8766. `app/config.js` holds the Mapbox public to
     path (orange-red); white dots mark where gauged rivers meet. The panel lists upstream and
     downstream gauges with distances along the channel, and *Compare with a connected gauge* overlays
     that gauge's discharge and reports how closely the two move together day to day.
+- **Rainfall (CHIRPS v3):** the *Rainfall* layers show rainfall per dekad (10-day period: days 1–10,
+  11–20 and 21–end of each month) from June 2023, with a dekad slider and play button, and as % of the
+  1991–2020 average for the same dekad (brown drier, green wetter, 80–120% near normal). *Monthly
+  rainfall* and *Monthly rainfall vs normal* sum the three dekads and move with the month slider. The
+  chart below the map follows the chosen layer by dekad or month, for the selection and Ethiopia.
+  For gauges, the discharge chart has a second panel underneath: rainfall per dekad over the gauge's
+  upstream catchment (bars) against its normal (dashed), on the same time axis, and the tooltip and
+  headline cards give the catchment's rainfall and % of normal. The selected gauge's catchment is
+  outlined (dashed) on the map.
 - **Food markets:** the 129 Ethiopian markets in the World Bank Real-Time Food Prices dataset, as
   diamonds coloured by the chosen price measure for the month. Click one, or pick it below the map, for
   three stacked panels on one month axis (each with its own scale, El Niño shaded):
@@ -89,6 +98,7 @@ Then browse to http://localhost:8766. `app/config.js` holds the Mapbox public to
 | 7 | `python flood_gauges.py all` | Gauges and OND trigger levels from OCHA's published dashboard; GloFAS v4 daily discharge (1984–present) and the 30-day ensemble forecast from the Open-Meteo Flood API; writes `app/data/flood.js`. Run after step 6 (it uses the map's months). `cells` matches each gauge to its Open-Meteo grid cell once (cached in `build/flood/cells.json`). |
 | 8 | `python food_prices.py all` | Downloads the World Bank RTFP market-level file (136 MB zip, all countries) into `build/food/`, keeps Ethiopia (`eth_rtfp_mkt.csv`), links each market to its woreda (point in polygon) and to a flood gauge, and writes `app/data/food.js`. Run after step 7. `build` alone reuses the downloaded file. |
 | 9 | `python rivers.py download` then `python rivers.py build` | HydroRIVERS v1.0 Africa (108 MB zip) into `build/rivers/`; snaps each gauge to its channel, traces paths and confluences, writes `app/data/rivers.js`. Run after step 7. Static: rerun only if the gauges change. |
+| 10 | `python chirps.py all` | CHIRPS v3.0 Africa dekad GeoTIFFs (final product; ~5 MB each) for 1991–2020 and June 2023 onward, each clipped to the study box and kept as `build/chirps/clip/<YYYY.MM.D>.npy`. The CHC server rate-limits bursts (HTTP 429), so downloads are paced at one every 4 s with back-off (the first full pull takes about 1–2 hours; daily runs fetch only new dekads). `build` makes area-weighted woreda means, catchment means for each gauge (HydroBASINS level-12 units upstream of the gauge's HydroRIVERS reach; zip downloaded once into `build/rivers/src/hybas12/`), the 1991–2020 dekad normals and monthly totals, and writes `app/data/rain.js`. Run after steps 6 and 9. |
 
 Each step is resumable. To refresh later: `python heat_api.py download final` (re-pulls the two
 latest months, whose provisional Open-Meteo days get replaced by ERA5), `python heat_api.py forecast`,
@@ -97,8 +107,8 @@ then step 6 is enough (about 2 minutes).
 
 ### Automatic daily refresh
 
-`refresh_daily.ps1` runs `download final`, `forecast`, steps 6 and 7, and `food_prices.py build` (no
-download) in turn, then publishes `app/` to GitHub Pages (about 7 minutes in all), and logs
+`refresh_daily.ps1` runs `download final`, `forecast`, steps 6 and 7, `food_prices.py build` (no
+download) and `chirps.py all` (new CHIRPS dekads, if any) in turn, then publishes `app/` to GitHub Pages (about 7 minutes in all), and logs
 to `build/logs/refresh.log`. The build also stamps the `data.js?v=` URL in `index.html`, so a plain
 reload of the map shows the new data. It is registered as the Windows scheduled task
 **Ethiopia woreda heat refresh**: daily at 07:30 local time (after the API's ~06:00 UTC forecast
@@ -168,6 +178,24 @@ The national line in the chart is population-weighted (LandScan). Exposure is su
   river travel times. The comparison card reports the correlation and the best lag, not a travel time.
 - GloFAS v4 is known to under-represent the Wabi Shebelle: it misses the 2023 Deyr floods at Gode
   (noted in OCHA's README; v5 fixes it but isn't operational yet). Treat the Shabelle gauges with care.
+
+## Rainfall
+
+- **Source:** CHIRPS v3.0 (Climate Hazards Center, UC Santa Barbara), dekadal Africa GeoTIFFs,
+  0.05° (~5.5 km): satellite infrared cold-cloud duration calibrated to and blended with station data
+  (v3 adds many stations and corrects gauge undercatch, so it is wetter than v2). The final product
+  appears about 4–6 weeks after a month ends; the preliminary product was not used, because the CHC
+  had no preliminary dekads newer than the final ones when this was built.
+- **Woreda and catchment means:** each polygon is rasterised at 1/5 of a CHIRPS pixel so pixels
+  count by the share of them inside the polygon (and by cos latitude); a woreda smaller than one
+  sub-pixel takes the pixel at its centre.
+- **Catchments:** the HydroBASINS level-12 unit containing each gauge's HydroRIVERS reach plus every
+  unit draining into it. Areas agree with the HydroRIVERS upstream area within 1–6 %.
+- **Normal:** the 1991–2020 mean for the same dekad of the year. *% of normal* is left blank where the
+  normal is under 2 mm a dekad (5 mm a month), since percentages of almost nothing are noise.
+- **Monthly layers** are only filled once all three dekads of a month are available.
+- **Citation:** Funk, C. et al. (2015), *Scientific Data* 2: 150066, and the CHIRPS v3.0
+  documentation (data.chc.ucsb.edu/products/CHIRPS/v3.0).
 
 ## Rivers
 

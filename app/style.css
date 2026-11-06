@@ -23,6 +23,7 @@
   --wet: #2171b5;
   --dry: #c8a26b;
   --cmp: #d97706;
+  --rain: #1b9e8f;
   --lag-all: #52514e;
 }
 @media (prefers-color-scheme: dark) {
@@ -51,6 +52,7 @@
     --wet: #4a98d8;
     --dry: #c8a26b;
     --cmp: #d97706;
+    --rain: #3fbfae;
     --lag-all: #c3c2b7;
   }
 }
@@ -79,6 +81,7 @@
   --wet: #4a98d8;
   --dry: #c8a26b;
   --cmp: #d97706;
+  --rain: #3fbfae;
   --lag-all: #c3c2b7;
 }
 
@@ -245,7 +248,7 @@ footer .note { color: var(--muted); margin: 10px 0 0; font-size: 11px; }
 .floodCtl .check { margin-top: 0; }
 .floodCtl > button { font-size: 12px; }
 .fleg { flex-wrap: wrap; margin: 6px 0 2px; }
-#fchart { height: 300px; }
+#fchart { height: 412px; }
 #fchart svg, #fstrip svg { display: block; }
 #fchart svg { width: 100%; height: 100%; }
 #fchart text, #fstrip text { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
@@ -290,3 +293,6 @@ button.png:disabled { opacity: .6; cursor: progress; }
 .stripHead { margin-top: 4px; }
 .mapboxgl-ctrl-group button.mapPng { width: auto; padding: 0 7px; font-size: 11px; font-weight: 600; color: #333; }
 .mapboxgl-ctrl-group button.mapPng::before { content: ""; }
+
+/* CHIRPS rainfall panel under the discharge chart */
+#fchart .rainLbl { fill: var(--ink-2); font-weight: 600; }
