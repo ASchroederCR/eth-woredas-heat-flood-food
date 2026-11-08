@@ -81,6 +81,22 @@
     };
     for (const [k, v] of Object.entries(add)) { M[k] = { ...v, group: 'Rainfall' }; RAIN_KEYS.push(k); }
   }
+  // Heat indices get fixed classes on each index's own heat-stress steps (the same for every month and for the
+  // daily and forecast versions). Quantile classes made tmax, WBGT, UTCI and heat index look alike: each map
+  // just ranked woredas by elevation. Fixed steps show where each index crosses its own danger levels.
+  const FIXED = '°C classes are fixed, the same for every month';
+  const HEAT_SCALE = {
+    tmax: { breaks: [20, 25, 30, 33, 35, 38], note: `${FIXED}; 35 °C and above is widely treated as extreme heat.` },
+    tmin: { breaks: [8, 12, 16, 20, 23, 25], note: `${FIXED}; nights at 20 °C or more are "tropical nights", and 25 °C matches the hot-nights layer.` },
+    wbgt: { breaks: [19, 22, 25, 28, 30, 32], note: `${FIXED}; 25, 28, 30 and 32 °C are the usual work–rest guidance steps (moderate to extreme risk), and 28 °C matches the WBGT > 28 layers.` },
+    utci: { breaks: [32, 35, 38, 42, 46, 50], note: `${FIXED}; 32, 38 and 46 °C mark the start of strong, very strong and extreme heat stress.` },
+    hi: { breaks: [21, 24, 27, 32, 36, 39], note: `${FIXED}; US NWS categories: caution from 27 °C, extreme caution from 32 °C, danger from 39 °C.` },
+  };
+  for (const [base, s] of Object.entries(HEAT_SCALE)) {
+    for (const k of [base, 'fc_' + base, 'dy_' + base]) {
+      if (M[k] && !M[k].breaks) { M[k].breaks = s.breaks; M[k].desc = `${M[k].desc.replace(/\.?\s*$/, '')}. ${s.note}`; }
+    }
+  }
   const GROUP_LABEL = {
     Forecast: `Forecast · ${FC_SPAN}`,
     Daily: 'Daily · last 3 weeks + forecast',
