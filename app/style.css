@@ -296,3 +296,18 @@ button.png:disabled { opacity: .6; cursor: progress; }
 
 /* CHIRPS rainfall panel under the discharge chart */
 #fchart .rainLbl { fill: var(--ink-2); font-weight: 600; }
+
+/* EthioMet bulletin panel */
+#emiWrap { position: relative; padding: 12px 16px 8px; background: var(--surface); border-top: 1px solid var(--border); }
+#emiWrap .desc { margin: 2px 0 6px; }
+#emiDays button { white-space: nowrap; }
+.btnLink { font-size: 13px; padding: 5px 10px; border: 1px solid var(--border); border-radius: 6px; color: var(--ink); text-decoration: none; white-space: nowrap; }
+.btnLink:hover { background: var(--page); }
+#emiGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; margin: 8px 0 4px; }
+.emiCard { border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; display: flex; flex-direction: column; }
+.emiCard .grp { font-size: 10px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+.emiCard h3 { margin: 1px 0 4px; font-size: 14px; }
+.emiCard p { margin: 0 0 6px; font-size: 13px; line-height: 1.45; flex: 1; }
+.emiCard .foot { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--muted); }
+.emiCard .foot a { font-size: 12px; white-space: nowrap; color: var(--accent); }
+.emiCard p.none { color: var(--muted); font-style: italic; }

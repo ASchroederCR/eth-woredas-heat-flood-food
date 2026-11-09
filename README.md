@@ -52,6 +52,10 @@ Then browse to http://localhost:8766. `app/config.js` holds the Mapbox public to
     path (orange-red); white dots mark where gauged rivers meet. The panel lists upstream and
     downstream gauges with distances along the channel, and *Compare with a connected gauge* overlays
     that gauge's discharge and reports how closely the two move together day to day.
+- **EthioMet official forecast:** a panel under the charts shows the latest daily bulletin from the
+  Ethiopian Meteorological Institute (total rainfall, exceptional rainfall, minimum and maximum
+  temperature for three 24-hour periods), with its own text for each, a link to each map and to the
+  bulletin. Pick the period with the buttons. It is a summary only: nothing in it is joined to woredas.
 - **Rainfall (CHIRPS v3):** the *Rainfall* layers show rainfall per dekad (10-day period: days 1–10,
   11–20 and 21–end of each month) from June 2023, with a dekad slider and play button, compared with
   1991–2020 in two ways: *vs normal* is the percentile of this dekad among the same dekad in each of
@@ -101,6 +105,7 @@ Then browse to http://localhost:8766. `app/config.js` holds the Mapbox public to
 | 8 | `python food_prices.py all` | Downloads the World Bank RTFP market-level file (136 MB zip, all countries) into `build/food/`, keeps Ethiopia (`eth_rtfp_mkt.csv`), links each market to its woreda (point in polygon) and to a flood gauge, and writes `app/data/food.js`. Run after step 7. `build` alone reuses the downloaded file. |
 | 9 | `python rivers.py download` then `python rivers.py build` | HydroRIVERS v1.0 Africa (108 MB zip) into `build/rivers/`; snaps each gauge to its channel, traces paths and confluences, writes `app/data/rivers.js`. Run after step 7. Static: rerun only if the gauges change. |
 | 10 | `python chirps.py all` | CHIRPS v3.0 Africa dekad GeoTIFFs (final product; ~5 MB each) for 1991–2020 and June 2023 onward, each clipped to the study box and kept as `build/chirps/clip/<YYYY.MM.D>.npy`. The CHC server rate-limits bursts (HTTP 429), so downloads are paced at one every 4 s with back-off (the first full pull takes about 1–2 hours; daily runs fetch only new dekads). `build` makes area-weighted woreda means, catchment means for each gauge (HydroBASINS level-12 units upstream of the gauge's HydroRIVERS reach; zip downloaded once into `build/rivers/src/hybas12/`), the 1991–2020 dekad normals and monthly totals, and writes `app/data/rain.js`. Run after steps 6 and 9. |
+| 11 | `python ethiomet.py` | Finds the newest EthioMet daily bulletin on ethiomet.gov.et (by the date window in its title, since slugs are sometimes malformed), reads its products, periods, text and map links, and writes `app/data/ethiomet.js`. Standard library only. Keeps the previous file if the site is down or its layout changes. |
 
 Each step is resumable. To refresh later: `python heat_api.py download final` (re-pulls the two
 latest months, whose provisional Open-Meteo days get replaced by ERA5), `python heat_api.py forecast`,
@@ -110,12 +115,12 @@ then step 6 is enough (about 2 minutes).
 ### Automatic daily refresh
 
 `refresh_daily.ps1` runs `download final`, `forecast`, steps 6 and 7, `food_prices.py build` (no
-download) and `chirps.py all` (new CHIRPS dekads, if any) in turn, then publishes `app/` to GitHub Pages (about 7 minutes in all), and logs
+download), `chirps.py all` (new CHIRPS dekads, if any) and `ethiomet.py` (latest bulletin) in turn, then publishes `app/` to GitHub Pages (about 7 minutes in all), and logs
 to `build/logs/refresh.log`. The build also stamps the `data.js?v=` URL in `index.html`, so a plain
 reload of the map shows the new data. It is registered as the Windows scheduled task
 **Ethiopia woreda heat refresh**: daily at 07:30 local time (after the API's ~06:00 UTC forecast
-update). If the PC is off or asleep then, it runs at the next chance. It runs only while you are
-logged on. The ONI file and the World Bank price file are not refreshed automatically: when a new RTFP
+update). It wakes the PC from sleep (Windows allows this on mains power only); if the PC is off or
+on battery then, it runs at the next chance. It runs only while you are logged on. The ONI file and the World Bank price file are not refreshed automatically: when a new RTFP
 release appears in microdata catalog 4483, update `URL` in `food_prices.py` and run `python food_prices.py download`.
 
 ```powershell
@@ -206,6 +211,22 @@ The national line in the chart is population-weighted (LandScan). Exposure is su
 - **Monthly layers** are only filled once all three dekads of a month are available.
 - **Citation:** Funk, C. et al. (2015), *Scientific Data* 2: 150066, and the CHIRPS v3.0
   documentation (data.chc.ucsb.edu/products/CHIRPS/v3.0).
+
+## EthioMet bulletin
+
+The Ethiopian Meteorological Institute (EMI) posts one bulletin a day under *Products → Numerical
+Weather Prediction* on ethiomet.gov.et: four products (total rainfall, exceptional rainfall, i.e.
+amounts in the top 10% to 1% of historical records, minimum and maximum temperature), each a 600 px
+map and a sentence or two of text for three 24-hour periods. The app shows the text and links to the
+maps and the bulletin; it does not copy the images. Text and maps are © EMI.
+
+- **Not joined to woredas.** EMI publishes no machine-readable forecast. Its MapViewer
+  (ethiomet.gov.et/mapviewer, a WMO Africa Climweb geomanager) has a public dataset list
+  (`/api/datasets/`) with "Daily Rainfall Forecast (mm)" and daily temperature rasters that can be
+  queried by point or area, but those layers stopped updating in Feb–May 2024. If EMI resumes them, or
+  shares the gridded files behind the bulletin maps, they can be added as woreda layers like CHIRPS.
+- **Sometimes a product has no text** (EMI posts only the map); the panel says so and links the map.
+- **If the bulletin is late,** the panel keeps the newest one EMI has posted and flags it as out of date.
 
 ## Rivers
 

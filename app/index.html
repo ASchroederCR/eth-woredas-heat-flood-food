@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Ethiopia Woredas: Heat, Flooding, and Food Prices (June 2023 →)</title>
   <link href="https://api.mapbox.com/mapbox-gl-js/v3.7.0/mapbox-gl.css" rel="stylesheet">
-  <link href="style.css?v=12" rel="stylesheet">
+  <link href="style.css?v=15" rel="stylesheet">
 </head>
 <body>
   <header>
@@ -143,6 +143,21 @@
     </section>
   </div>
 
+  <section id="emiWrap" hidden>
+    <div class="chartHead">
+      <div>
+        <h2 id="emiTitle">EthioMet official forecast</h2>
+        <div class="desc" id="emiWhere"></div>
+      </div>
+      <div class="floodCtl">
+        <div class="seg" id="emiDays" role="group" aria-label="Forecast day"></div>
+        <a id="emiLink" class="btnLink" target="_blank" rel="noopener">Open the bulletin ↗</a>
+      </div>
+    </div>
+    <div id="emiGrid"></div>
+    <p class="desc" id="emiNote"></p>
+  </section>
+
   <section id="floodWrap">
     <div class="chartHead">
       <div>
@@ -236,6 +251,8 @@
       <dd>River discharge from GloFAS v4 (Copernicus Emergency Management Service) via the Open-Meteo Flood API, 1984 to a 30-day ensemble forecast, at the 14 gauges and OND trigger levels of OCHA's Ethiopia flood anticipatory-action project (Centre for Humanitarian Data, ds-aa-eth-flooding). RP2/RP5 levels are fitted here to 1984–2025 annual peaks. River network: HydroRIVERS v1.0 (HydroSHEDS; Lehner &amp; Grill 2013, CC-BY 4.0).</dd>
       <dt>Rainfall</dt>
       <dd>CHIRPS v3.0 dekadal rainfall (Climate Hazards Center, UC Santa Barbara; 0.05°, satellite infrared blended with station data), final product from June 2023 and preliminary data for the latest dekads. Woreda and catchment means, compared with the same dekad in 1991–2020 as a percentile (vs normal) and as % of the average. Gauge catchments from HydroBASINS v1c level 12 (HydroSHEDS).</dd>
+      <dt>Official forecast</dt>
+      <dd>Ethiopian Meteorological Institute (EMI) daily bulletin, "Daily Rainfall, Exceptional rainfall and Temperature Forecast" (ethiomet.gov.et): the latest bulletin's text and links to its maps, checked each morning. Shown as published; not joined to woredas.</dd>
       <dt>Food prices</dt>
       <dd>World Bank Real-Time Food Prices (RTFP), market level, release 2026-10-05 (microdata catalog 4483): 129 markets, monthly; months without a survey are World Bank estimates.</dd>
       <dt>Population &amp; age</dt>
@@ -252,10 +269,11 @@
   <script src="config.js"></script>
   <script src="data/geo.js?v=3"></script>
   <script src="data/rivers.js?v=202611041614"></script>
-  <script src="data/food.js?v=202611081119"></script>
-  <script src="data/flood.js?v=202611081119"></script>
-  <script src="data/rain.js?v=202611081120"></script>
-  <script src="data/data.js?v=202611081116"></script>
-  <script src="app.js?v=24"></script>
+  <script src="data/food.js?v=202611090736"></script>
+  <script src="data/flood.js?v=202611090736"></script>
+  <script src="data/rain.js?v=202611090737"></script>
+  <script src="data/ethiomet.js?v=202611091115"></script>
+  <script src="data/data.js?v=202611090733"></script>
+  <script src="app.js?v=26"></script>
 </body>
 </html>

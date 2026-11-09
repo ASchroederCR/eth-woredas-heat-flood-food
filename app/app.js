@@ -2079,6 +2079,46 @@
   }
   map.addControl(new PngControl(), 'top-right');
 
+  // ---------- EthioMet bulletin (text + links only; not joined to woredas until EMI's gridded files arrive) ----------
+  const EMI = window.EMI || null;
+  if (EMI && EMI.products && EMI.products.length) {
+    const wrap = $('emiWrap'), daysEl = $('emiDays'), grid = $('emiGrid');
+    const nDays = Math.max(...EMI.products.map((p) => p.days.length));
+    const span = (d) => (d && d.from ? `${dayName(d.from)}–${dayName(d.to)}` : '');
+    const today = new Date().toISOString().slice(0, 10);
+    // open on the period covering today if there is one, else the first
+    let emiDay = Math.max(0, EMI.products[0].days.findIndex((d) => d.from <= today && today < d.to));
+    const fetched = new Date(EMI.fetched.replace('Z', ':00Z'));
+    const stale = EMI.end < today;
+    $('emiTitle').textContent = `EthioMet official forecast · ${dayName(EMI.start)} – ${dayName(EMI.end, true).replace(/^\w+, /, '')}`;
+    $('emiWhere').innerHTML = `Ethiopian Meteorological Institute daily bulletin, in its own words. Checked ${esc(fetched.toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}.` +
+      (stale ? ' <span class="badge fc">Out of date: this is the newest bulletin EthioMet has posted</span>' : '');
+    $('emiLink').href = EMI.url;
+    $('emiNote').innerHTML = 'Each period is 24 hours, as labelled by EthioMet. Text and maps © Ethiopian Meteorological Institute; the map links open their images. ' +
+      'Not yet joined to the woreda map: that needs EMI\'s gridded forecast files. The map\'s own forecast layers are from Open-Meteo.';
+    for (let k = 0; k < nDays; k++) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = span(EMI.products[0].days[k]) || `Day ${k + 1}`;
+      b.addEventListener('click', () => { emiDay = k; renderEmi(); });
+      daysEl.appendChild(b);
+    }
+    function renderEmi() {
+      [...daysEl.children].forEach((b, k) => b.setAttribute('aria-pressed', k === emiDay));
+      grid.innerHTML = EMI.products.map((p) => {
+        const d = p.days[Math.min(emiDay, p.days.length - 1)];
+        const prev = emiDay > 0 ? p.days[emiDay - 1] : null;
+        const same = p.days.every((x) => x.text === p.days[0].text);
+        const tag = !d.text ? '' : same && p.days.length > 1 ?'Same text for all three periods' : prev && prev.text === d.text ? 'Unchanged from the period before' : '';
+        return `<div class="emiCard"><div class="grp">${esc(p.group || '')}</div><h3>${esc(p.name)}</h3>` +
+          (d.text ? `<p>${esc(d.text)}</p>` : '<p class="none">EthioMet posted no text with this map; open the map for the forecast.</p>') +
+          `<div class="foot">${tag ? `<span>${tag}</span>` : '<span></span>'}${d.img ? `<a href="${esc(d.img)}" target="_blank" rel="noopener">Map ↗</a>` : ''}</div></div>`;
+      }).join('');
+    }
+    renderEmi();
+    wrap.hidden = false;
+  }
+
   // ---------- theme ----------
   $('themeBtn').addEventListener('click', () => {
     document.documentElement.dataset.theme = isDark() ? 'light' : 'dark';

@@ -23,7 +23,8 @@ $b = Step 'forecast' @('heat_api.py', 'forecast')                   # replace th
 $c = Step 'build' @('build_map_data.py')                            # rebuild app\data even if a pull failed
 $d = Step 'flood gauges' @('flood_gauges.py', 'all')                # GloFAS discharge + forecast -> app\data\flood.js
 $e = Step 'food prices' @('food_prices.py', 'build')                # re-link markets to the new months (no download)
-$g = Step 'rainfall' @('chirps.py', 'all')                          # new CHIRPS dekads -> app\dataain.js (kept as is if this fails)
+$g = Step 'rainfall' @('chirps.py', 'all')                          # new CHIRPS dekads -> app\data\rain.js (kept as is if this fails)
+$h = Step 'ethiomet' @('ethiomet.py')                              # latest EthioMet bulletin text -> app\data\ethiomet.js (kept as is if this fails)
 
 # publish app\ to GitHub Pages (only if the builds succeeded, so a failed run never replaces a good site)
 Add-Content $log "--- $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') publish" -Encoding utf8
@@ -34,7 +35,7 @@ if ($c -or $d -or $e) {
     $f = $LASTEXITCODE
 }
 Add-Content $log "--- publish exit $f" -Encoding utf8
-Add-Content $log "=== done $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') (download $a, forecast $b, build $c, flood $d, food $e, rain $g, publish $f)`n" -Encoding utf8
+Add-Content $log "=== done $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') (download $a, forecast $b, build $c, flood $d, food $e, rain $g, ethiomet $h, publish $f)`n" -Encoding utf8
 
 # keep the log to its last ~2000 lines
 $lines = Get-Content $log
