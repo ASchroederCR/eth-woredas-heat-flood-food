@@ -1551,6 +1551,13 @@
     return p[k] === null || !p[k - 1] ? null : 100 * (p[k] / p[k - 1] - 1);   // mom
   }
   const fpAt = (i, t, meas, com) => fpVal(i, fp.fm.get(months[t]), meas, com);   // t = map month index
+  // Month the market symbols show: the map month, or the latest earlier month with prices when the
+  // World Bank release doesn't reach it yet (e.g. the month-to-date heat month).
+  const fpT = () => {
+    for (let t = state.t; t >= 0; t--) if (fp.mk.some((m, k) => fpAt(k, t) !== null)) return t;
+    return state.t;
+  };
+  const fpMonthLbl = () => { const t = fpT(); return monthName(months[t]) + (t !== state.t ? ' (latest prices)' : ''); };
   const natAt = (t, meas = fp.meas, com = fp.com) => {
     const k = fp.fm.get(months[t]); if (k === undefined) return null;
     const nat = FP.national[com];
@@ -1599,10 +1606,11 @@
   }
   function paintMarkets() {
     if (!fp) return;
-    if (map.getSource('m')) fp.mk.forEach((m, k) => map.setFeatureState({ source: 'm', id: k }, { c: fpBin(fpAt(k, state.t)), on: k === fp.mi }));
+    const ft = fpT();
+    if (map.getSource('m')) fp.mk.forEach((m, k) => map.setFeatureState({ source: 'm', id: k }, { c: fpBin(fpAt(k, ft)), on: k === fp.mi }));
     const ms = FP_MEAS[fp.meas], b = ms.breaks;
     const com = FP.commodities.find((c) => c.key === fp.com).label;
-    $('marketLegend').innerHTML = `<div class="gPeriod">${esc(com)} · ${esc(ms.label.toLowerCase())} · ${monthName(months[state.t])}</div>` +
+    $('marketLegend').innerHTML = `<div class="gPeriod">${esc(com)} · ${esc(ms.label.toLowerCase())} · ${fpMonthLbl()}</div>` +
       `<div class="legBar">${DIVERGING.map((c) => `<span style="background:${c}"></span>`).join('')}</div>` +
       `<div class="legTicks"><span></span>${b.map((x) => `<span>${x > 0 && fp.meas !== 'yoy' ? '+' : ''}${x}</span>`).join('')}<span></span></div>` +
       `<div class="legNo"><i></i>No price · units: ${ms.unit}</div>`;
@@ -1820,7 +1828,7 @@
     map.on('mousemove', 'm-pt', (e) => {
       const k = e.features[0].id, m = fp.mk[k], com = FP.commodities.find((c) => c.key === fp.com);
       tip.innerHTML = `<b>${esc(m.name)}</b> <span class="m">market · ${esc(m.adm1)}</span><br>` +
-        `${esc(com.label)}, ${esc(FP_MEAS[fp.meas].label.toLowerCase())}: <b>${fpFmt(fpAt(k, state.t), FP_MEAS[fp.meas].unit)}</b> <span class="m">· ${monthName(months[state.t])}</span>` +
+        `${esc(com.label)}, ${esc(FP_MEAS[fp.meas].label.toLowerCase())}: <b>${fpFmt(fpAt(k, fpT()), FP_MEAS[fp.meas].unit)}</b> <span class="m">· ${fpMonthLbl()}</span>` +
         `<br>${M[fp.heat].label}: <b>${withUnit(heatAt(k, state.t), fp.heat)}</b>` +
         (m.gauge !== null && F ? `<br>Gauge: ${esc(F.stations[m.gauge].label)} (${m.gauge_km} km)` : '') +
         '<br><span class="m">Click for its price, heat and flood series</span>';
