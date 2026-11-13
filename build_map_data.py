@@ -22,7 +22,7 @@ FCST = ROOT / "build" / "forecast"
 RECENT_DAYS = 21  # observed days shown before the forecast in the daily chart
 APP = ROOT / "app"
 SHP = ROOT.parent / "Boundaries" / "OCHA_COD_AB" / "eth_admin3.shp"
-MIN_DAYS_IN_MONTH = int(os.environ.get("HEAT_MIN_DAYS", 20))  # a trailing partial month with fewer days is left off the map
+MIN_DAYS_IN_MONTH = int(os.environ.get("HEAT_MIN_DAYS", 20))  # full-month threshold; the current month is added as "month to date"
 
 
 def f_to_c(f):
@@ -160,6 +160,13 @@ def main():
     m = monthly(df)
     counts = m.groupby("month")["n_days"].median()
     months = sorted(mo for mo, n in counts.items() if n >= MIN_DAYS_IN_MONTH)
+    # The current month goes on the map as "month to date" (flagged partial) instead of waiting for
+    # MIN_DAYS_IN_MONTH days: means are comparable, day counts and exposure are only so far.
+    partial = None
+    last = max(counts.index)
+    if last not in months and (not months or last > months[-1]):
+        months.append(last)
+        partial = {"month": str(last), "days": int(counts[last]), "of": int(pd.Period(str(last)).days_in_month)}
     pop = df.groupby("name")["population"].first()
 
     vuln = {}
@@ -295,6 +302,7 @@ def main():
         "months": months,
         "enso": enso_months(ROOT / "build" / "oni.ascii.txt", months),
         "provisional_share": prov,
+        "partial": partial,
         "woredas": [{"pcode": r.adm3_pcode, "name": r.adm3_name, "zone": r.adm2_name, "region": r.adm1_name}
                     for r in g.itertuples()],
         "metrics": metrics,

@@ -9,7 +9,8 @@ each market's price relative to the national level: that strips out Ethiopia-wid
 (the 2024 birr float, general inflation) and leaves the local signal to compare with local heat
 and river flooding.
 
-    python food_prices.py download   # fetch the RTFP zip (136 MB) into build/food/ and extract Ethiopia
+    python food_prices.py download   # fetch the newest RTFP zip (136 MB) into build/food/ and extract Ethiopia
+    python food_prices.py update     # download only if the catalog has a newer release, then build (daily)
     python food_prices.py build      # write app/data/food.js (needs data.js and flood.js built first)
     python food_prices.py all
 """
@@ -28,7 +29,7 @@ ROOT = Path(__file__).resolve().parent
 OUT = ROOT / "build" / "food"
 APP = ROOT / "app"
 SHP = ROOT.parent / "Boundaries" / "OCHA_COD_AB" / "eth_admin3.shp"
-URL = "https://microdata.worldbank.org/catalog/4483/download/360822"
+RESOURCES = "https://microdata.worldbank.org/index.php/api/catalog/WLD_2021_RTFP_v02_M/resources"
 ZIP = OUT / "WLD_RTFP_mkt.zip"
 ETH = OUT / "eth_rtfp_mkt.csv"
 COMMODITIES = [  # key in RTFP, label, unit
@@ -43,9 +44,41 @@ COMMODITIES = [  # key in RTFP, label, unit
 ]
 
 
-def cmd_download():
+def latest_release():
+    """Newest RTFP market file in the catalog: (download URL, file name). The catalog's resource API is
+    public; the market file is the resource titled 'Monthly food price estimates by product and market,
+    version YYYY-MM-DD' (the 'details' and 'ticker' files have longer titles)."""
+    req = urllib.request.Request(RESOURCES, headers={"User-Agent": "eth-woreda-heat-map/1.0"})
+    with urllib.request.urlopen(req, timeout=120) as r:
+        res = json.load(r)["resources"]
+    mkt = [x for x in res if re.fullmatch(r"Monthly food price estimates by product and market, version \d{4}-\d{2}-\d{2}", (x.get("title") or "").strip())
+           and (x.get("filename") or "").startswith("WLD_RTFP_mkt_")]
+    if not mkt:
+        raise RuntimeError("no RTFP market file in the catalog's resource list (layout changed?)")
+    best = max(mkt, key=lambda x: (x["filename"], x["resource_id"]))
+    return f"https://microdata.worldbank.org/catalog/4483/download/{best['resource_id']}", best["filename"]
+
+
+def cmd_update():
+    """Download the newest release only if it differs from the one in build/food/release.txt."""
+    have = (OUT / "release.txt").read_text().strip() if (OUT / "release.txt").exists() else None
+    try:
+        url, name = latest_release()
+    except Exception as e:  # the catalog being down must not stop the daily build
+        print("could not check for a new RTFP release:", e, "| keeping", have)
+        return
+    if name == have and ETH.exists():
+        print("RTFP up to date:", have)
+        return
+    print("new RTFP release:", name, "(had", have, ")")
+    cmd_download(url)
+
+
+def cmd_download(url=None):
     OUT.mkdir(parents=True, exist_ok=True)
-    req = urllib.request.Request(URL, headers={"User-Agent": "eth-woreda-heat-map/1.0"})
+    if url is None:
+        url = latest_release()[0]
+    req = urllib.request.Request(url, headers={"User-Agent": "eth-woreda-heat-map/1.0"})
     with urllib.request.urlopen(req, timeout=600) as r:
         name = re.search(r'filename="?([^";]+)', r.headers.get("Content-Disposition", ""))
         tmp = ZIP.with_suffix(".tmp")
@@ -144,5 +177,7 @@ if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "all"
     if cmd in ("download", "all") and not (cmd == "all" and ETH.exists()):
         cmd_download()
-    if cmd in ("build", "all"):
+    if cmd == "update":
+        cmd_update()
+    if cmd in ("build", "all", "update"):
         cmd_build()

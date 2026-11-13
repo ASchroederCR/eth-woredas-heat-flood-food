@@ -55,6 +55,11 @@
   const monthIdx = new Map(months.map((m, t) => [m, t]));
   const PRE0 = RN ? (RN.prelim.indexOf(true) < 0 ? dekads.length : RN.prelim.indexOf(true)) : 0;   // first preliminary dekad
   const isPre = (j) => j >= PRE0;
+  // The current month is shown as "month to date" (D.partial): means compare, day counts are so far.
+  const PART = D.partial || null;
+  const partT = PART ? months.indexOf(PART.month) : -1;
+  const partNote = PART ? `${PART.days} of ${PART.of} days so far` : '';
+  const monthLong = (t) => monthName(months[t]) + (t === partT ? ` (${partNote})` : '');
   const RAIN_KEYS = [];
   if (RN && dekads.length) {
     const span = `${dekName(dekads[0], true)} – ${dekName(dekads[dekads.length - 1], true)}`;
@@ -168,7 +173,7 @@
   }
   function periodOf(key) {
     const s = M[key];
-    if (s.temporal) return monthName(months[state.t]);
+    if (s.temporal) return monthLong(state.t);
     if (s.daily) return dayName(days[state.d]) + (isFcDay(state.d) ? ' (forecast)' : '');
     if (s.dekadal) return dekName(dekads[state.k], true);
     if (isFcSummary(key)) return `forecast ${FC_SPAN}`;
@@ -352,7 +357,7 @@
   daySlider.addEventListener('input', () => setDay(+daySlider.value));
 
   $('coverage').textContent =
-    `${n.toLocaleString('en')} woredas · monthly, ${monthName(months[0])} – ${monthName(months[months.length - 1])}` +
+    `${n.toLocaleString('en')} woredas · monthly, ${monthName(months[0])} – ${monthName(months[months.length - 1])}${PART ? ' (to date)' : ''}` +
     ` · daily data ${D.first_date} to ${D.last_date}` +
     (hasFc ? ` · forecast to ${dayName(days[days.length - 1])}` : '') +
     (dekads.length ? ` · rainfall by dekad to ${dekName(dekads[dekads.length - 1], true)}` : '');
@@ -433,6 +438,8 @@
     state.t = t;
     slider.value = t;
     $('monthLabel').textContent = monthName(months[t]);
+    const pb = $('partBadge');
+    if (pb) { pb.hidden = t !== partT; pb.textContent = 'Month to date'; pb.title = `${partNote}: means are comparable with full months; day counts and person-days are so far`; }
     const badge = $('ensoBadge');
     badge.hidden = !D.enso.elnino[t];
     badge.textContent = D.enso.provisional[t] ? 'El Niño (provisional)' : 'El Niño';
@@ -783,9 +790,9 @@
       }
       return d;
     };
-    // observed part solid; forecast part dashed, joined to the last observed day
+    // observed part solid; forecast / preliminary / month-to-date part dashed, joined to the last full point
     const line = (arr, c) => {
-      const split = daily && hasFc ? DY.fc_start : dek && PRE0 < N ? PRE0 : N;
+      const split = daily ? (hasFc ? DY.fc_start : N) : dek ? (PRE0 < N ? PRE0 : N) : partT >= 0 ? partT : N;
       let out = `<path d="${path(arr, 0, split - 1)}" fill="none" stroke="${c}" stroke-width="2" stroke-linejoin="round"/>`;
       if (split < N) out += `<path d="${path(arr, Math.max(0, split - 1), N - 1)}" fill="none" stroke="${c}" stroke-width="2" stroke-dasharray="5 4" stroke-linejoin="round"/>`;
       return out;
@@ -815,7 +822,7 @@
         head = `<b>${dekName(dekads[t], true)}</b>${ensoAt(t) ? ' · <b>El Niño</b>' : ''}${isPre(t) ? ' <span class="m">· preliminary</span>' : ''}`;
       } else {
         const prov = D.provisional_share[t] > 0.5 ? '<br><span class="m">Mostly Open-Meteo (provisional)</span>' : '';
-        head = `<b>${monthName(months[t])}</b>${D.enso.elnino[t] ? ' · <b>El Niño</b>' : ''}` +
+        head = `<b>${monthName(months[t])}</b>${t === partT ? ` <span class="m">· month to date, ${partNote}</span>` : ''}${D.enso.elnino[t] ? ' · <b>El Niño</b>' : ''}` +
           (D.enso.oni[t] !== null ? ` <span class="m">ONI ${D.enso.oni[t] > 0 ? '+' : ''}${D.enso.oni[t]}</span>` : '') + prov;
       }
       chartTip.innerHTML = head +
@@ -1824,7 +1831,9 @@
     });
     map.on('mouseleave', 'm-pt', () => { tip.hidden = true; map.getCanvas().style.cursor = ''; });
     map.on('click', 'm-pt', (e) => { setMarket(e.features[0].id); $('foodWrap').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); });
-    $('foodSrc').textContent = `${FP.source}, release ${FP.release || '—'}. Months without a survey price are modelled by the World Bank (no dot on the line).`;
+    const fpRel = ((FP.release || '').match(/\d{4}-\d{2}-\d{2}/) || [FP.release || '—'])[0];
+    if ($('fpRel')) $('fpRel').textContent = fpRel;
+    $('foodSrc').textContent = `${FP.source}, release ${fpRel}. Months without a survey price are modelled by the World Bank (no dot on the line).`;
     const addis = fp.mk.findIndex((m) => m.name === 'Gode');
     fp.mi = addis >= 0 ? addis : 0;
     ms.value = String(fp.mi);

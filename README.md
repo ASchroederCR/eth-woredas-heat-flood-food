@@ -120,8 +120,11 @@ to `build/logs/refresh.log`. The build also stamps the `data.js?v=` URL in `inde
 reload of the map shows the new data. It is registered as the Windows scheduled task
 **Ethiopia woreda heat refresh**: daily at 07:30 local time (after the API's ~06:00 UTC forecast
 update). It wakes the PC from sleep (Windows allows this on mains power only); if the PC is off or
-on battery then, it runs at the next chance. It runs only while you are logged on. The ONI file and the World Bank price file are not refreshed automatically: when a new RTFP
-release appears in microdata catalog 4483, update `URL` in `food_prices.py` and run `python food_prices.py download`.
+on battery then, it runs at the next chance. It runs only while you are logged on. The food price step runs `food_prices.py update`: it asks the microdata catalog's public resource
+API for the newest RTFP market file and downloads it (136 MB) only when it differs from
+`build/food/release.txt`; if the catalog is unreachable it keeps the current release. The ONI file is
+not refreshed automatically: NOAA adds a season early each month, so download a fresh
+`oni.ascii.txt` into `build/` and the next run picks it up.
 
 ```powershell
 Start-ScheduledTask -TaskName 'Ethiopia woreda heat refresh'        # run now
@@ -270,6 +273,9 @@ is shown as *provisional* and carried to the latest mapped month.
 - The most recent ~10 days come from Open-Meteo and can change when ERA5 catches up. A backfill
   chunk that hit an ERA5 outage is permanently Open-Meteo. The chart tooltip flags months that are
   mostly Open-Meteo.
-- A trailing month with fewer than 20 days of data is left off the map.
+- The current month is on the map as *month to date* (a badge by the month slider, a dashed last
+  segment in the chart, "12 of 30 days so far" in tooltips). Means (temperatures, WBGT, UTCI,
+  anomalies) compare with full months; day counts and exposure person-days only cover the days so far.
+  Forecast days are not included. Earlier months need at least 20 days (`HEAT_MIN_DAYS`).
 - Forecast layers are a weather forecast, not observations: skill drops with lead time, and the
   values are the uncorrected Open-Meteo grid. They go stale after a day; refresh as above.

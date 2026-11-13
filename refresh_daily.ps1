@@ -22,7 +22,7 @@ $a = Step 'download final' @('heat_api.py', 'download', 'final')   # re-pull the
 $b = Step 'forecast' @('heat_api.py', 'forecast')                   # replace the forecast days
 $c = Step 'build' @('build_map_data.py')                            # rebuild app\data even if a pull failed
 $d = Step 'flood gauges' @('flood_gauges.py', 'all')                # GloFAS discharge + forecast -> app\data\flood.js
-$e = Step 'food prices' @('food_prices.py', 'build')                # re-link markets to the new months (no download)
+$e = Step 'food prices' @('food_prices.py', 'update')               # new World Bank release if any, then re-link markets to the new months
 $g = Step 'rainfall' @('chirps.py', 'all')                          # new CHIRPS dekads -> app\data\rain.js (kept as is if this fails)
 $h = Step 'ethiomet' @('ethiomet.py')                              # latest EthioMet bulletin text -> app\data\ethiomet.js (kept as is if this fails)
 
